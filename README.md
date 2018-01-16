@@ -28,6 +28,9 @@ NOTE: there are more, processed by Davit, Renyi and John, see *David_MethylSeq_P
 NOTE: some of the files were too large to push to GitHub; saved on the Lab230 machine in *data* folders.    
 
 ## Daily Logs<a name="logs"></a>
+### 01/16/2018
+* Methyl-seq from RUCDR rerun is imported to R; first analysis.
+
 ### 11/06/2017
 * Added SD estimation with difference vs. mean method(*mes13_rnaseq_lg_vs_hg_diff_vs_mean_pval_v1.R* and *mes13_rnaseq_hg_vs_mic_diff_vs_mean_pval_v1.R*).        
 * Edited this (*README.md*) file updated FastQ and BAM file locations as the files were moved to the 4Tb internal storage (*datastorage*).   
