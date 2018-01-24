@@ -11,6 +11,9 @@
 [Daily Logs](#logs)  
 [Results](#results)   
 
+## To Do (01/22/2018)
+1. use edgeR to get p-vals and select (Done, 01/24/2018)
+
 ## Files<a name="files"></a>
 FastQ file legend (both, Methyl-seq and RNA-seq):    
 ~/kidney.ro1/mes13/docs/legend.xlsx    
@@ -22,12 +25,19 @@ FastQ file legend (both, Methyl-seq and RNA-seq):
 2. All alignemnt files and documents are located here (1Tb internal SSD):    
 a. Methyl-seq processed by Davit:    
 */media/administrator/datastorage/Processed_BAM_Files/David_MethylSeq_Processed/Davit/BAM Files*   
-b. RNA-seq processed by Davit:    
+b. Methyl-seq processed by Renyi:  
+*/media/administrator/datastorage/Processed_BAM_Files/Wenji_MES13_MethylSeq_Processed/Renyi_12292017/Results*, *combined_WJ_anno.xlsx*   
+c. RNA-seq processed by Davit:      
 */media/administrator/datastorage/Processed_BAM_Files/David_BGI_RNAseq_Processed/Davit*   
 NOTE: there are more, processed by Davit, Renyi and John, see *David_MethylSeq_Processed* and *David_BGI_RNAseq_Processed* folders.    
 NOTE: some of the files were too large to push to GitHub; saved on the Lab230 machine in *data* folders.    
+d. RNA-seq processed by Renyi    
+*/media/administrator/datastorage/Processed_BAM_Files/Wenji_MES13_RNASeq_Processed/Renyi_12292017/Results_Hisat2*, *mes13_featurecounts_Dec2017_david.csv* (raw counts) and *mes13_fpkm_Dec2017_david.csv* (FPKM data converted from counts by DESeq2)
 
 ## Daily Logs<a name="logs"></a>
+### 01/24/2018
+* Added script for RNA-seq analysis with *edgeR*
+
 ### 01/16/2018
 * Methyl-seq from RUCDR rerun is imported to R; first analysis.
 
