@@ -35,6 +35,9 @@ d. RNA-seq processed by Renyi
 */media/administrator/datastorage/Processed_BAM_Files/Wenji_MES13_RNASeq_Processed/Renyi_12292017/Results_Hisat2*, *mes13_featurecounts_Dec2017_david.csv* (raw counts) and *mes13_fpkm_Dec2017_david.csv* (FPKM data converted from counts by DESeq2)
 
 ## Daily Logs<a name="logs"></a>
+### 01/29/2018
+* Added script for RNA-seq analysis with *DEGseq*
+
 ### 01/24/2018
 * Added script for RNA-seq analysis with *edgeR*
 

@@ -52,6 +52,15 @@ dt1
 
 cpm(dt1[, -1])
 
+# # David's edgeR code (see 'david_edgeR_no_replicates_ mes13.R')----
+# bcv <- 0.1
+# y <- DGEList(counts = dt1[,2:4], 
+#              group = 2:4,
+#              remove.zeros = TRUE)
+# et <- exactTest(y, 
+#                 dispersion = bcv^2)
+# et
+
 # edgeR----
 dt2 <- DGEList(counts = as.matrix(dt1[, -1]),
                group = trt.names)
@@ -227,7 +236,7 @@ m1 <- glmFit(dt2, design.mat)
 summary(m1)
 
 # Contrasts: HG - LG
-lrt12 <- glmLRT(fit, 
+lrt12 <- glmLRT(m1, 
                 contrast = c(-1, 1))
 lrt12
 topTags(lrt12, 
