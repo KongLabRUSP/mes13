@@ -7,34 +7,22 @@
 ---    
 
 ## Table of Contents
-[Files](#files)
 [Daily Logs](#logs)  
 [Results](#results)   
+[Files](#files)
 
 ## To Do (01/22/2018)
 1. use edgeR to get p-vals and select (Done, 01/24/2018)
 
-## Files<a name="files"></a>
-FastQ file legend (both, Methyl-seq and RNA-seq):    
-~/kidney.ro1/mes13/docs/legend.xlsx    
-
-1. Original FastQ files are located here (4Tb internal hard drive):    
-*/media/administrator/datastorage/FastQ_2017/Methyl_seq/July/pools/Kong_MouseMethyl_pool6.zip*    
-*/media/administrator/datastorage/FastQ_2017/RNA_seq/BGI_RNA*   
-   
-2. All alignemnt files and documents are located here (1Tb internal SSD):    
-a. Methyl-seq processed by Davit:    
-*/media/administrator/datastorage/Processed_BAM_Files/David_MethylSeq_Processed/Davit/BAM Files*   
-b. Methyl-seq processed by Renyi:  
-*/media/administrator/datastorage/Processed_BAM_Files/Wenji_MES13_MethylSeq_Processed/Renyi_12292017/Results*, *combined_WJ_anno.xlsx*   
-c. RNA-seq processed by Davit:      
-*/media/administrator/datastorage/Processed_BAM_Files/David_BGI_RNAseq_Processed/Davit*   
-NOTE: there are more, processed by Davit, Renyi and John, see *David_MethylSeq_Processed* and *David_BGI_RNAseq_Processed* folders.    
-NOTE: some of the files were too large to push to GitHub; saved on the Lab230 machine in *data* folders.    
-d. RNA-seq processed by Renyi    
-*/media/administrator/datastorage/Processed_BAM_Files/Wenji_MES13_RNASeq_Processed/Renyi_12292017/Results_Hisat2*, *mes13_featurecounts_Dec2017_david.csv* (raw counts) and *mes13_fpkm_Dec2017_david.csv* (FPKM data converted from counts by DESeq2)
-
 ## Daily Logs<a name="logs"></a>
+### 04/13/2018
+* Added DEGseq script for RNA-seq TIIA (Wenji)
+
+### 03/15/2018
+* Analysis plan (Davit)    
+a. We are splitting data to LG, HG and MIC (David) and LG, HG and TII (Wenji), and rerunning DEGseq analysis of RNA-seq    
+b. We are splitting Methyl-seq data same way and analyzing using John's DMRfinder to  cluster CpG followed by a new method to get p-values for data with no reduplicates.    
+
 ### 02/22/2018
 * Finished *DEGseq* analysis of MES13 data, all treatments vs. HG
 
@@ -79,3 +67,23 @@ d. RNA-seq processed by Renyi
 ## Results <a name="results"></a>
 a. RO1 porposal results:   
 ~/kidney.ro1/mes13/docs/results_09142017.pptx
+
+## Files<a name="files"></a>
+FastQ file legend (both, Methyl-seq and RNA-seq):    
+~/kidney.ro1/mes13/docs/legend.xlsx    
+
+1. Original FastQ files are located here (4Tb internal hard drive):    
+*/media/administrator/datastorage/FastQ_2017/Methyl_seq/July/pools/Kong_MouseMethyl_pool6.zip*    
+*/media/administrator/datastorage/FastQ_2017/RNA_seq/BGI_RNA*   
+   
+2. All alignemnt files and documents are located here (1Tb internal SSD):    
+a. Methyl-seq processed by Davit:    
+*/media/administrator/datastorage/Processed_BAM_Files/David_MethylSeq_Processed/Davit/BAM Files*   
+b. Methyl-seq processed by Renyi:  
+*/media/administrator/datastorage/Processed_BAM_Files/Wenji_MES13_MethylSeq_Processed/Renyi_12292017/Results*, *combined_WJ_anno.xlsx*   
+c. RNA-seq processed by Davit:      
+*/media/administrator/datastorage/Processed_BAM_Files/David_BGI_RNAseq_Processed/Davit*   
+NOTE: there are more, processed by Davit, Renyi and John, see *David_MethylSeq_Processed* and *David_BGI_RNAseq_Processed* folders.    
+NOTE: some of the files were too large to push to GitHub; saved on the Lab230 machine in *data* folders.    
+d. RNA-seq processed by Renyi    
+*/media/administrator/datastorage/Processed_BAM_Files/Wenji_MES13_RNASeq_Processed/Renyi_12292017/Results_Hisat2*, *mes13_featurecounts_Dec2017_david.csv* (raw counts) and *mes13_fpkm_Dec2017_david.csv* (FPKM data converted from counts by DESeq2)
