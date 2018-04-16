@@ -47,7 +47,7 @@ dt1
 # Remove genes with low counts----
 summary(dt1[, -1])
 tmp <- rowSums(dt1[, -1])
-# Remove if total across 5 samples is no more than 20
+# Remove if total across 5 samples is no more than 10
 dt1 <- droplevels(subset(dt1,
                          tmp > 10))
 dt1
@@ -61,7 +61,7 @@ DEGexp(geneExpMatrix1 = dt1,
        groupLabel1 = colnames(dt1)[3],
        
        geneExpMatrix2 = dt1,
-       geneCol2 = 4, 
+       geneCol2 = 1, 
        expCol2 = 2,
        groupLabel2 = colnames(dt1)[2],
        
