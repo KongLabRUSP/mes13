@@ -22,7 +22,12 @@ require(knitr)
 # Treatment legend----
 trt.names <- c("LG",
                "HG",
-               "TIIA-5 uM")
+               "MIC 1.5uM",
+               "TIIA-5 uM",
+               "FX 1uM",
+               "Gen-10 uM",
+               "Ber 6uM")
+
 
 # Load data----
 # Question to Renyi: how was the data processed and annotated?
@@ -31,16 +36,23 @@ dt1 <- fread("data/rna_seq/Renyi_12292017/mes13_featurecounts_Dec2017_david.csv"
              skip = 1)
 dt1
 
+# CHECK
+dt1[Geneid == "Tnfrsf25",]
+dt1[Geneid == "Fcer1g",]
+
+# Keep only gene IDs and counts
 # Keep only gene IDs and counts
 dt1 <- dt1[, c("Geneid",
                "WJ1.dedup.bam",
                "WJ2.dedup.bam",
-               "WJ4.dedup.bam")]
+               "WJ3.dedup.bam",
+               "WJ4.dedup.bam",
+               "WJ5.dedup.bam",
+               "WJ6.dedup.bam",
+               "WJ7.dedup.bam")]
 dt1
-names(dt1) <- c("gene",
-                "LG",
-                "HG",
-                "TIIA")
+colnames(dt1) <- c("gene",
+                trt.names)
 
 dt1
 
@@ -49,9 +61,14 @@ summary(dt1[, -1])
 tmp <- rowSums(dt1[, -1])
 # Remove if total across 3 samples is no more than 10
 dt1 <- droplevels(subset(dt1,
-                         tmp > 10))
+                         tmp > 20))
 dt1
-# 13,643 genes left, down from 24,421 genes
+# 13,954 genes left, down from 24,421 genes
+
+# Leave the 3 treatments only----
+dt1 <- subset(dt1,
+              select = c(1:3, 5))
+dt1
 
 # DEGseq----
 # a. (HG - LG)----
@@ -97,13 +114,13 @@ plot(hg_lg$diff ~ hg_lg$mu,
      xlab = "Mean",
      ylab = "Difference",
      main = "MES13 Gene Expression, HG-LG, FDR < 0.1")
-points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.1 & hg_lg$diff > 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.1 & hg_lg$diff > 0] ,
+points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.3 & hg_lg$diff > 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.3 & hg_lg$diff > 0] ,
        pch = "x",
        col = "green")
-points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.1 & hg_lg$diff < 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.1 & hg_lg$diff < 0] ,
+points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.3 & hg_lg$diff < 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.3 & hg_lg$diff < 0] ,
        pch = "x",
        col = "red")
-abline(h = c(-0.5, 0.5),
+abline(h = c(-0.3, 0.3),
        lty = 2)
 graphics.off()
 
@@ -150,26 +167,39 @@ plot(tiia_hg$diff ~ tiia_hg$mu,
      xlab = "Mean",
      ylab = "Difference",
      main = "MES13 Gene Expression, TIIA-HG, FDR < 0.1")
-points(tiia_hg$diff[tiia_hg$`q-value(Storey et al. 2003)` < 0.1 & tiia_hg$diff > 0] ~ tiia_hg$mu[tiia_hg$`q-value(Storey et al. 2003)` < 0.1 & tiia_hg$diff > 0] ,
+points(tiia_hg$diff[tiia_hg$`q-value(Storey et al. 2003)` < 0.2 & tiia_hg$diff > 0] ~ tiia_hg$mu[tiia_hg$`q-value(Storey et al. 2003)` < 0.2 & tiia_hg$diff > 0] ,
        pch = "x",
        col = "green")
-points(tiia_hg$diff[tiia_hg$`q-value(Storey et al. 2003)` < 0.1 & tiia_hg$diff < 0] ~ tiia_hg$mu[tiia_hg$`q-value(Storey et al. 2003)` < 0.1 & tiia_hg$diff < 0] ,
+points(tiia_hg$diff[tiia_hg$`q-value(Storey et al. 2003)` < 0.2 & tiia_hg$diff < 0] ~ tiia_hg$mu[tiia_hg$`q-value(Storey et al. 2003)` < 0.2 & tiia_hg$diff < 0] ,
        pch = "x",
        col = "red")
-abline(h = c(-0.5, 0.5),
+abline(h = c(-0.3, 0.3),
        lty = 2)
 graphics.off()
 
-# Heatmap----
-l1 <- hg_lg[hg_lg$`q-value(Storey et al. 2003)` < 0.1 &
-              abs(hg_lg$`log2(Fold_change) normalized`) > 0.5, ]
-l1
-l2 <- tiia_hg[tiia_hg$`q-value(Storey et al. 2003)` < 0.1 &
-                abs(tiia_hg$`log2(Fold_change) normalized`) > 0.5, ]
-l2
+# Venn diagram----
+g1 <- hg_lg[`q-value(Storey et al. 2003)` < 0.5 & 
+              `log2(Fold_change) normalized` > 0.3,]$GeneNames
+# 263 genes
+g2 <- hg_lg[`q-value(Storey et al. 2003)` < 0.5 & 
+              `log2(Fold_change) normalized` < -0.3,]$GeneNames
+# 207 genes
 
-ll <- l2$GeneNames[l2$GeneNames %in% l1$GeneNames]
-ll
+g3 <- tiia_hg[`q-value(Storey et al. 2003)` < 0.5 & 
+                `log2(Fold_change) normalized` > 0.3,]$GeneNames
+# 1,120 genes
+g4 <- tiia_hg[`q-value(Storey et al. 2003)` < 0.5 & 
+                `log2(Fold_change) normalized` < -0.3,]$GeneNames
+# 1,393 genes
+
+up.dn <- g1[g1 %in% g4]
+# 124 genes
+dn.up <- g2[g2 %in% g3]
+# 89 genes
+
+# Heatmap----
+ll <- unique(c(up.dn,
+               dn.up))
 
 t1 <- merge(hg_lg[hg_lg$GeneNames %in% ll, 
                   c("GeneNames",
@@ -185,7 +215,7 @@ t1 <- t1[order(t1$`HG-LG`,
                decreasing = TRUE), ]
 t1
 write.csv(t1,
-          file = "tmp/mes13_tiia_genes.csv",
+          file = "tmp/mes13_tiia_genes_q-0.5_log2-0.3.csv",
           row.names = FALSE)
 
 ll <- melt.data.table(data = t1,
@@ -199,6 +229,11 @@ ll$Comparison <- factor(ll$Comparison,
 lvls <- ll[ll$Comparison == "HG-LG", ]
 ll$Gene <- factor(ll$Gene,
                   levels = lvls$Gene[order(lvls$`Gene Expression Diff`)])
+# Keep top 100 genes for the plot----
+gene.keep <- unique(ll$Gene[order(abs(ll$`Gene Expression Diff`)) < 101])
+ll <- droplevels(subset(ll,
+                        Gene %in% gene.keep))
+ll
 
 p1 <- ggplot(data = ll) +
   coord_polar("y",
@@ -228,7 +263,7 @@ p1 <- ggplot(data = ll) +
   scale_y_discrete("",
                    expand = c(0, 0)) +
   ggtitle("Changes in Gene Expression
-          Fold-Change > 0.5 and q-Value < 0.1") + 
+          Fold-Change > 0.3 and q-Value < 0.5") + 
   theme(plot.title = element_text(hjust = 0.5),
         axis.title.x = element_blank(),
         axis.text.x = element_blank(),
@@ -239,29 +274,13 @@ p1 <- ggplot(data = ll) +
 p1
 
 tiff(filename = "tmp/mes13_rnaseq_DEGseq_heatmap.tiff",
-     height = 8,
-     width = 8,
+     height = 10,
+     width = 10,
      units = 'in',
      res = 300,
      compression = "lzw+p")
 print(p1)
 graphics.off()
-
-# Venn diagram----
-g1 <- l1[l1$`log2(Fold_change) normalized` > 0,]$GeneNames
-# 31 genes
-g2 <- l1[l1$`log2(Fold_change) normalized` < 0,]$GeneNames
-# 25 genes
-
-g3 <- l2[l2$`log2(Fold_change) normalized` > 0,]$GeneNames
-# 206 genes
-g4 <- l2[l2$`log2(Fold_change) normalized` < 0,]$GeneNames
-# 366 genes
-
-g1[g1 %in% g4]
-# 10 genes
-g2[g2 %in% g3]
-# 10 genes
 
 # sessionInfo()
 # sink()

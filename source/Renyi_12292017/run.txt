@@ -1,0 +1,148 @@
+
+@!!!! using >>>mm10<<< #############
+
+administrator@SOP-1482:~/Documents/Methyl_dec2017$ time for i in *.gz; do bismark -multicore 4 --output_dir ./aligned --temp_dir ./temp ~/genomes/Mus_musculus/UCSC/mm10/ $i; done
+
+real	1085m24.722s
+user	9435m36.620s
+sys	51m56.292s
+
+~ 1 hour per sample... 
+
+ for i in *.bam; do samtools view -h $i | python ~/tools/DMRfinder/findDups5.py - - | python ~/tools/DMRfinder/extract_CpG_data.py -i - -o ${i%.bam}.cov; done && python ~/tools/DMRfinder/combine_CpG_sites.py -o combined_DD.csv DD*.cov && python ~/tools/DMRfinder/combine_CpG_sites.py -o combined_WJ.csv WJ*.cov
+
+
+'
+administrator@SOP-1482:~/Documents/Methyl_dec2017/aligned$ for i in *.bam; do samtools view -h $i | python ~/tools/DMRfinder/findDups5.py - - | python ~/tools/DMRfinder/extract_CpG_data.py -i - -o ${i%.bam}.cov; done && python ~/tools/DMRfinder/combine_CpG_sites.py -o combined_DD.csv DD*.cov && python ~/tools/DMRfinder/combine_CpG_sites.py -o combined_WJ.csv WJ*.cov
+Reads:     35667813
+  Dup seq:  4337801
+  Dup pos:  5838071
+  Unique:  25491941
+Reads:     37750938
+  Dup seq:  5029094
+  Dup pos:  6488567
+  Unique:  26233277
+Reads:     32482627
+  Dup seq:  3940037
+  Dup pos:  5127004
+  Unique:  23415586
+Reads:     31919746
+  Dup seq:  3685793
+  Dup pos:  4940205
+  Unique:  23293748
+Reads:     36695575
+  Dup seq:  4469397
+  Dup pos:  6119027
+  Unique:  26107151
+Reads:     33774935
+  Dup seq:  4249074
+  Dup pos:  5495451
+  Unique:  24030410
+Reads:     37612957
+  Dup seq:  5135684
+  Dup pos:  6624101
+  Unique:  25853172
+Reads:     37231267
+  Dup seq:  4958391
+  Dup pos:  6326326
+  Unique:  25946550
+Reads:     24998167
+  Dup seq:  2695334
+  Dup pos:  3241740
+  Unique:  19061093
+Reads:     39865469
+  Dup seq:  6032018
+  Dup pos:  6904020
+  Unique:  26929431
+Reads:     36100783
+  Dup seq:  5265875
+  Dup pos:  5741023
+  Unique:  25093885
+Reads:     26498907
+  Dup seq:  3177782
+  Dup pos:  3625596
+  Unique:  19695529
+Reads:     28686198
+  Dup seq:  3699716
+  Dup pos:  4167278
+  Unique:  20819204
+Reads:     35036064
+  Dup seq:  5298440
+  Dup pos:  5727051
+  Unique:  24010573
+Reads:     34285198
+  Dup seq:  4499181
+  Dup pos:  5342025
+  Unique:  24443992
+Reads:     37222386
+  Dup seq:  5436725
+  Dup pos:  5884555
+  Unique:  25901106
+
+
+
+
+
+python ~/tools/DMRfinder/combine_CpG_sites.py -f -r 5 -c 5 -o combined_fr5c5_WJ.csv WJ*.cov
+
+
+administrator@SOP-1482:~/Documents/Methyl_dec2017/aligned$ python ~/tools/DMRfinder/combine_CpG_sites.py -f -r 5 -c 5 -o combined_fr5c5_DD.csv DD*.cov
+
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("DSS")
+# # R
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("GenomicFeatures")
+library(GenomicFeatures)
+txdb <- makeTxDbFromGFF('/home/administrator/genomes/Mus_musculus/UCSC/mm10/Annotation/Genes/genes.gtf',
+                         format='gtf', organism='Mus musculus')
+library(ChIPseeker)
+peak <- readPeakFile('~/Documents/Methyl_dec2017/aligned/combined_fr5c5_DD.csv')
+peakAnno <- annotatePeak(peak, TxDb=txdb)
+
+# add annotations to comb_def.csv
+peak2 <- read.table('~/Documents/Methyl_dec2017/aligned/combined_fr5c5_DD.csv', header=T)
+peak2 <- peak2[peak2$chr!="chrM",]
+peak2$feature <- peakAnno@anno$annotation
+peak2$distance <- peakAnno@anno$distanceToTSS
+peak2$gene <- peakAnno@anno$geneId
+write.table(peak2, '~/Documents/Methyl_dec2017/aligned/combined_fr5c5_DD_anno.csv', sep='\t', quote=F, row.names=F)
+#or 
+write.table(peak2, 'results_anno_T.csv', sep='\t', quote=T, row.names=F)
+
+
+Usage: python combine_CpG_sites.py  [options]  -o <output>  [<input>]+
+    [<input>]+    One or more files, each listing methylation counts
+                    for a particular sample
+    -o <output>   Output file listing genomic regions and combined
+                    methylation counts for each sample
+  Options:
+    To consider a particular CpG:
+      -r <int>    Min. number of counts at a position (def. 3)
+      -s <int>    Min. number of samples with -r counts (def. 1)
+    To analyze a region of CpGs:
+      -d <int>    Max. distance between CpG sites (def. 100)
+      -c <int>    Min. number of CpGs in a region (def. 3)
+      -x <int>    Max. length of a region (def. 500)
+    To report a particular result:
+      -m <int>    Min. total counts in a region (def. 20)
+    Other:
+      -f          Report methylation fraction for each sample
+      -b          Memory-saving option (may take longer)
+      -e <file>   File listing ordered chromosome names (comma-
+                    separated; used only with -b option)
+
+
+
+Rscript ../../DMRfinder/findDMRs.r -i combined.csv -o results.csv -n Control,Model,Treatment sample1.cov,sample2.cov sample3.cov,sample4.cov sample5.cov,sample6.cov
+
+
+administrator@SOP-1482:~/Documents/Methyl_dec2017/aligned$ Rscript ~/tools/DMRfinder/findDMRs.r -i combined_DD.csv -o combined_DD_fdmr.csv -n 12,34,567,89X DD01,DD02 DD03,DD04 DD05,DD06,DD07 DD08,DD09,DD10
+
+
+administrator@SOP-1482:~/Documents/Methyl_dec2017/aligned$ python ~/tools/DMRfinder/combine_CpG_sites.py -f -r 5 -c 1 -x 2 -o combined_fr5c1x2_DD.csv DD*.cov
+f	> Fraction
+r	> min. counts of a CpG
+c	> min. CpGs in a DMR (set to 1 then DMR becomes CpG)
+x	> max. lengh of a DMR (set to 1 or 2, then one DMR will never have more than 1 CpG)
+

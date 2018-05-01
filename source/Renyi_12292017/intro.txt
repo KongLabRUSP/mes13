@@ -1,0 +1,65 @@
+for David
+
+administrator@SOP-1482:~/Documents/bgi_mes13$ for i in {1..7}; do echo $i; mv WJ-$i/*.gz WJ"$i".fastq.gz; done
+
+#1 hisat2
+for i in *.fastq.gz; do hisat2 -p 6 -x /path/to/hisat2/index/ -U $i | samtools view -bh -o ${i%.fastq.gz}.bam -; done #note: piping to samtolls reqires version 1.15 or above. The last "-" (dash) may be ommitted.
+
+administrator@SOP-1482:~/Documents/bgi_mes13$ for i in *.fastq.gz; do hisat2 -p 6 -x ~/genomes/Mus_musculus/mm10/genome -U $i | ~/bin/samtools1 view -bh -o ${i%.fastq.gz}.bam -; done
+
+
+hisat2 -p 6 -x ~/genomes/Mus_musculus/mm10/genome -U WJ1.fastq.gz | ~/bin/samtools1 view -bh -o WJ1.bam -
+
+
+administrator@SOP-1482:~/Documents/bgi_mes13$ ~/bin/samtools1 sort -@ 6 -o WJ1.sorted.bam WJ1.bam
+
+
+for i in *.sorted.bam; do java -jar ~/tools/picard/picard.jar MarkDuplicates I=$i O=${i%.sorted.bam}.dedup.bam M=${i%.sorted.bam}.dedup.txt REMOVE_DUPLICATES=true; done
+
+#5 FeatureCounts
+featureCounts --primary -T 8 -a /path/to/genes.gtf -o featurecounts.results.csv *dup.bam
+
+administrator@SOP-1482:~/Documents/bgi_mes13$ featureCounts --primary -T 8 -a ~/genomes/Mus_musculus/UCSC/mm10/Annotation/Genes/genes.gtf -o mes13_featurecounts_Dec2017_david.csv *dup.bam
+
+WJ-1	LG	41	G1
+WJ-2	HG	42	G2
+WJ-3	MIC-1.5 uM	43	G3
+WJ-4	TIIA-5 uM	44	G4
+WJ-5	FX-1 uM	45	G5
+WJ-6	Gen-10 uM	46	G6
+WJ-7	Ber-6 uM	47	G7
+
+
+#
+#run tophat2 for all fastq files, then move "accepted_hits.bam" files to "bam" folder with correlated names
+echo "Starting tophat2...running..."
+for fqfile in ./fastq/*
+do
+basefn=$(basename $fqfile $FQ_EXT)
+mkdir -pv tophat_out/$basefn
+tophat2 -G $GENE_ANNO -p $cpu_num -o "./tophat_out/$basefn" $GENE_REF $fqfile #$HOME_DIR"BAM_Files" 
+mv ./tophat_out/$basefn/accepted_hits.bam ./bam/$basefn.bam
+echo "Finished file $basefn.bam"
+done
+echo "tophat2 job done."
+
+\
+
+#####
+administrator@SOP-1482:~/Documents/bgi_mes13$ tophat2 -p 8 ~/genomes/Mus_musculus/UCSC/mm10/Sequence/Bowtie2Index/genome WJ1.fastq.gz
+
+#tophat 2.1.1
+~/Documents/tophat-2.1.1.Linux_x86_64/tophat2  -p 15 ~/genomes/Mus_musculus/UCSC/mm10/Sequence/Bowtie2Index/genome WJ1.fastq.gz
+
+
+
+
+administrator@SOP-1482:~/Documents/bgi_mes13$ for i in *.gz; do mkdir -p ./new/`basename $i .fastq.gz`; tophat2 -p 8 -o ./new/`basename $i .fastq.gz` ~/genomes/Mus_musculus/UCSC/mm10/Sequence/Bowtie2Index/genome $i; echo -e "\n\n\n Finished file: $i !\n"; done
+
+
+
+
+
+
+
+

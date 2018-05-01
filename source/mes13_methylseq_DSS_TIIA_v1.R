@@ -29,7 +29,7 @@ require(TxDb.Mmusculus.UCSC.mm10.knownGene)
 require(DSS)
 
 # Load and view raw counts (no annoation)----
-dt01 <- fread("data/Renyi_Methylseq_12292017/combined_WJ_anno.csv")
+dt01 <- fread("data/methyl_seq/Renyi_12292017/combined_WJ_anno.csv")
 dt01
 
 # NOTE: there are 14 rows representing mitochondrial DNA
@@ -37,7 +37,7 @@ unique(dt01$chr)
 dt01[dt01$chr == "chrM",]
 
 # Annotate----
-peakAnno1 <- annotatePeak(peak = "data/Renyi_Methylseq_12292017/combined_WJ_anno.csv", 
+peakAnno1 <- annotatePeak(peak = "data/methyl_seq/Renyi_12292017/combined_WJ_anno.csv", 
                           tssRegion = c(-3000, 3000), 
                           TxDb = TxDb.Mmusculus.UCSC.mm10.knownGene,
                           annoDb = "org.Mm.eg.db")
@@ -86,9 +86,1115 @@ dt1 <- data.table(gene = dt1$SYMBOL,
                   chr = dt1$geneChr,
                   pos = dt1$start,
                   reg = NA,
-                  dt1[, CpG:WJ03.X],
+                  dt1[, CpG:WJ02.X],
+                  dt1[, WJ04.N:WJ04.X],
                   geneName = dt1$GENENAME)
-dt1
+dt1# # Dispersion Shrinkage for Sequencing data (DSS)----
+# # This is based on Wald test for beta-binomial distribution.
+# # Source: https://www.bioconductor.org/packages/release/bioc/vignettes/DSS/inst/doc/DSS.pdf
+# # The DM detection procedure implemented in DSS is based on a rigorous Wald test for betabinomial
+# # distributions. The test statistics depend on the biological variations (characterized
+# # by dispersion parameter) as well as the sequencing depth. An important part of the algorithm
+# # is the estimation of dispersion parameter, which is achieved through a shrinkage estimator
+# # based on a Bayesian hierarchical model [1]. An advantage of DSS is that the test can be
+# # performed even when there is no biological replicates. That’s because by smoothing, the
+# # neighboring CpG sites can be viewed as “pseudo-replicates", and the dispersion can still be
+# # estimated with reasonable precision.
+# 
+# # DMR Part I: Controls only (aging effect)----
+# # Prepare data----
+# dtl <- list(data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$WJ02.N,
+#                        X = dt1$WJ02.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$WJ01.N,
+#                        X = dt1$WJ01.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$WJ03.N,
+#                        X = dt1$WJ03.X))
+# dtl
+# 
+# BSobj <- makeBSseqData(dat = dtl,
+#                        sampleNames = c("HG",
+#                                        "LG",
+#                                        "TIIA"))
+# BSobj
+# 
+# design <- data.table(Treatment = c("HG",
+#                                    "LG",
+#                                    "TIIA"))
+# design
+# 
+# DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
+#                              design = design,
+#                              formula = ~ Treatment)
+# # Error in DMLfit.multiFactor(BSobj = BSobj, design = design, formula = ~Treatment) : 
+# #   No enough degree of freedom to fit the linear model. Drop some terms in formula.
+# 
+# DMLfit$X
+# 
+# # a. Control Week 15 vs. Week 2----
+# DMLtest.Ctrl.W15.W2 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "timeWeek15")
+# 
+# DMLtest.Ctrl.W15.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.W15.W2$chr))
+# head(pct[, c("X15w_CON_0",
+#              "X15w_CON_1",
+#              "X02w_CON_0",
+#              "X02w_CON_1")])
+# DMLtest.Ctrl.W15.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X15w_CON_0",
+#                                                            "X15w_CON_1",
+#                                                            "X02w_CON_0",
+#                                                            "X02w_CON_1")]),
+#                                         DMLtest.Ctrl.W15.W2,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.Ctrl.W15.W2$mu.ctrl15w <- (DMLtest.Ctrl.W15.W2$X15w_CON_0 + DMLtest.Ctrl.W15.W2$X15w_CON_1)/2
+# DMLtest.Ctrl.W15.W2$mu.ctrl02w <- (DMLtest.Ctrl.W15.W2$X02w_CON_0 + DMLtest.Ctrl.W15.W2$X02w_CON_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.W15.W2$mu <- (DMLtest.Ctrl.W15.W2$mu.ctrl15w + DMLtest.Ctrl.W15.W2$mu.ctrl02w)/2
+# DMLtest.Ctrl.W15.W2$diff <- (DMLtest.Ctrl.W15.W2$mu.ctrl15w - DMLtest.Ctrl.W15.W2$mu.ctrl02w)
+# 
+# # Green: hypomethylated at Week 2; Red: hypermethylated at Week 2
+# dtp1 <- DMLtest.Ctrl.W15.W2[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_ctrl_w15-w02.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylated Reads in Control\nat Week 15 vs. Week 2, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "green")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "red")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # b. Control Week 25 vs. Week 2----
+# DMLtest.Ctrl.W25.W2 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "timeWeek25")
+# 
+# DMLtest.Ctrl.W25.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.W25.W2$chr))
+# head(pct[, c("X25w_CON_0",
+#              "X25w_CON_1",
+#              "X02w_CON_0",
+#              "X02w_CON_1")])
+# DMLtest.Ctrl.W25.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X25w_CON_0",
+#                                                            "X25w_CON_1",
+#                                                            "X02w_CON_0",
+#                                                            "X02w_CON_1")]),
+#                                         DMLtest.Ctrl.W25.W2,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.Ctrl.W25.W2$mu.ctrl25w <- (DMLtest.Ctrl.W25.W2$X25w_CON_0 + DMLtest.Ctrl.W25.W2$X25w_CON_1)/2
+# DMLtest.Ctrl.W25.W2$mu.ctrl02w <- (DMLtest.Ctrl.W25.W2$X02w_CON_0 + DMLtest.Ctrl.W25.W2$X02w_CON_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.W25.W2$mu <- (DMLtest.Ctrl.W25.W2$mu.ctrl25w + DMLtest.Ctrl.W25.W2$mu.ctrl02w)/2
+# DMLtest.Ctrl.W25.W2$diff <- (DMLtest.Ctrl.W25.W2$mu.ctrl25w - DMLtest.Ctrl.W25.W2$mu.ctrl02w)
+# 
+# # Green: hypomethylated at Week 2; Red: hypermethylated at Week 2
+# dtp1 <- DMLtest.Ctrl.W25.W2[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_ctrl_w25-w02.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylated Reads in Control\nat Week 25 vs. Week 2, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "green")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "red")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # c. Control Week 25 vs. Week 15----
+# # NOTE: checked teh contrast by rerunning teh analysis wiht Week 15 as reference
+# # Identical estimates: proceed with the code below!
+# DMLtest.Ctrl.W25.W15 <- DMLtest.multiFactor(DMLfit,
+#                                             Contrast = matrix(c(0, -1, 1), 
+#                                                               ncol = 1))
+# 
+# DMLtest.Ctrl.W25.W15$chr <- as.numeric(as.character(DMLtest.Ctrl.W25.W15$chr))
+# head(pct[, c("X25w_CON_0",
+#              "X25w_CON_1",
+#              "X15w_CON_0",
+#              "X15w_CON_1")])
+# DMLtest.Ctrl.W25.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                     pct[, c("X25w_CON_0",
+#                                                             "X25w_CON_1",
+#                                                             "X15w_CON_0",
+#                                                             "X15w_CON_1")]),
+#                                          DMLtest.Ctrl.W25.W15,
+#                                          by = c("chr",
+#                                                 "pos")))
+# DMLtest.Ctrl.W25.W15$mu.ctrl25w <- (DMLtest.Ctrl.W25.W15$X25w_CON_0 + DMLtest.Ctrl.W25.W15$X25w_CON_1)/2
+# DMLtest.Ctrl.W25.W15$mu.ctrl15w <- (DMLtest.Ctrl.W25.W15$X15w_CON_0 + DMLtest.Ctrl.W25.W15$X15w_CON_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.W25.W15$mu <- (DMLtest.Ctrl.W25.W15$mu.ctrl25w + DMLtest.Ctrl.W25.W15$mu.ctrl15w)/2
+# DMLtest.Ctrl.W25.W15$diff <- (DMLtest.Ctrl.W25.W15$mu.ctrl25w - DMLtest.Ctrl.W25.W15$mu.ctrl15w)
+# 
+# # Green: hypomethylated at Week 15; Red: hypermethylated at Week 15
+# dtp1 <- DMLtest.Ctrl.W25.W15[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_ctrl_w25-w15.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylated Reads in Control\nat Week 25 vs. Week 15, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "green")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "red")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # Heatmaps 1----
+# sign.15.02 <- c(unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff > 0.2]$pos),
+#                 unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff < -0.2]$pos))
+# l1 <- DMLtest.Ctrl.W15.W2[pos %in% sign.15.02,
+#                           c("gene", 
+#                             "pos", 
+#                             "diff")]
+# 
+# sign.25.02 <- c(unique(DMLtest.Ctrl.W25.W2[fdrs < 0.01 & diff > 0.2]$pos),
+#                 unique(DMLtest.Ctrl.W25.W2[fdrs < 0.01 & diff < -0.2]$pos))
+# l2 <- DMLtest.Ctrl.W25.W2[pos %in% sign.25.02,
+#                           c("gene", 
+#                             "pos", 
+#                             "diff")]
+# 
+# sign.25.15 <- unique(DMLtest.Ctrl.W25.W15[fdrs < 0.01 & diff > 0]$pos)
+# l3 <- DMLtest.Ctrl.W25.W15[, c("gene", 
+#                                "pos", 
+#                                "diff")]
+# 
+# ll <- l1[l1$pos %in% l2$pos, ]
+# # ll <- ll[ll$pos %in% l3$pos, ]
+# ll
+# 
+# t1 <- merge(l1[l1$pos %in% ll$pos],
+#             l2[l2$pos %in% ll$pos],
+#             by = c("gene", 
+#                    "pos"))
+# t1 <- merge(t1[t1$pos %in% ll$pos],
+#             l3[l3$pos %in% ll$pos],
+#             by = c("gene", 
+#                    "pos"))
+# write.csv(t1,
+#           file = "tmp/heatmap1.csv")
+# ll <- t1
+# 
+# ll <- melt.data.table(data = ll,
+#                       id.vars = 1:2,
+#                       measure.vars = 3:5,
+#                       variable.name = "Comparison",
+#                       value.name = "Methyl Diff")
+# ll$reg <- factor(paste(ll$gene, 
+#                        ll$pos,
+#                        sep = "_"))
+# ll$Comparison <- factor(ll$Comparison,
+#                         levels = rev(c("diff.x",
+#                                        "diff.y",
+#                                        "diff")),
+#                         labels = rev(c("w15w2",
+#                                        "w25w2",
+#                                        "w25w15")))
+# lvls <- ll[ll$Comparison == "w15w2", ]
+# ll$reg <- factor(ll$reg,
+#                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# 
+# p1 <- ggplot(data = ll) +
+#   coord_polar("y",
+#               start = 0,
+#               direction = -1) +
+#   geom_tile(aes(x =  as.numeric(Comparison),
+#                 y = reg, 
+#                 fill = `Methyl Diff`),
+#             color = "white") +
+#   geom_text(data = ll[Comparison == "w25w15", ],
+#             aes(x = rep(2.75,
+#                         nlevels(reg)),
+#                 y = reg,
+#                 label = unique(reg),
+#                 angle = 90 + seq(from = 0,
+#                             to = 360,
+#                             length.out = nlevels(reg))[as.numeric(reg)]),
+#             hjust = 0) +
+#   scale_fill_gradient2(low = "red", 
+#                        high = "green", 
+#                        mid = "grey", 
+#                        midpoint = 0, 
+#                        name = "Methyl Diff") +
+#   scale_x_continuous(limits = c(0, 
+#                                 max(as.numeric(ll$Comparison)) + 0.5),
+#                      expand = c(0, 0)) + 
+#   scale_y_discrete("",
+#                    expand = c(0, 0)) +
+#   ggtitle("Changes in Controls Over Time") + 
+#   theme(plot.title = element_text(hjust = 0.5),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank())
+# # p1
+# 
+# tiff(filename = "tmp/skin_uvb_heatmap_ctrl.tiff",
+#      height = 8,
+#      width = 8,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# print(p1)
+# graphics.off()
+# 
+# # # Heatmaps 2----
+# # sign.15.02 <- c(unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff > 0.2]$pos),
+# #                 unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff < -0.2]$pos))
+# # l1 <- DMLtest.Ctrl.W15.W2[pos %in% sign.15.02,
+# #                           c("gene", 
+# #                             "pos", 
+# #                             "diff")]
+# # names(l1)[3] <- "w15w2"
+# # 
+# # l2 <- DMLtest.Ctrl.W25.W2[pos %in% sign.15.02,
+# #                           c("gene", 
+# #                             "pos", 
+# #                             "diff")]
+# # names(l2)[3] <- "w25w2"
+# # 
+# # l3 <- DMLtest.Ctrl.W25.W15[pos %in% sign.15.02,
+# #                            c("gene", 
+# #                              "pos", 
+# #                              "diff")]
+# # names(l3)[3] <- "w25w15"
+# # 
+# # ll <- merge(l1, l2, by = c("gene", 
+# #                            "pos"))
+# # ll <- merge(ll, l3, by = c("gene", 
+# #                            "pos"))
+# # ll
+# # 
+# # ll <- melt.data.table(data = ll,
+# #                       id.vars = 1:2,
+# #                       measure.vars = 3:5,
+# #                       variable.name = "Comparison",
+# #                       value.name = "Methyl Diff")
+# # ll$reg <- factor(paste(ll$gene, 
+# #                        ll$pos,
+# #                        sep = "_"))
+# # ll$Comparison <- factor(ll$Comparison,
+# #                         levels = unique(ll$Comparison))
+# # 
+# # lvls <- ll[ll$Comparison == "w15w2", ]
+# # ll$reg <- factor(ll$reg,
+# #                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# # ll
+# # 
+# # p1 <- ggplot(data = ll) +
+# #   geom_tile(aes(x =  Comparison,
+# #                 y = reg, 
+# #                 fill = `Methyl Diff`),
+# #             color = "black") +
+# #   scale_fill_gradient2(low = "red", 
+# #                        high = "green", 
+# #                        mid = "black", 
+# #                        midpoint = 0, 
+# #                        # limit = c(-10, 10), 
+# #                        name = "Methyl Diff") +
+# #   scale_x_discrete(expand = c(0, 0)) + 
+# #   scale_y_discrete("Gene Region",
+# #                    expand = c(0, 0)) +
+# #   ggtitle("Changes in Controls Over Time") +
+# #   theme(plot.title = element_text(hjust = 0.5))
+# # p1
+# # 
+# # tiff(filename = "tmp/skin_uvb_heatmap_ctrl.tiff",
+# #      height = 20,
+# #      width = 6,
+# #      units = 'in',
+# #      res = 300,
+# #      compression = "lzw+p")
+# # print(p1)
+# # graphics.off()
+# 
+# # DMR Part II: Week2 Comparisons----
+# snames <- c("W2UVB1",
+#             "W2UVB2",
+#             "W2Ctrl1",
+#             "W2Ctrl2",
+#             "W2SFN1",
+#             "W2SFN2")
+# 
+# # Multi-factor analysis (treatment + time + interaction)----
+# dtl <- list(data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_UVB_0.N,
+#                        X = dt1$X02w_UVB_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_UVB_1.N,
+#                        X = dt1$X02w_UVB_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_CON_0.N,
+#                        X = dt1$X02w_CON_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_CON_1.N,
+#                        X = dt1$X02w_CON_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_SFN_0.N,
+#                        X = dt1$X02w_SFN_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_SFN_1.N,
+#                        X = dt1$X02w_SFN_1.X))
+# dtl
+# 
+# BSobj <- makeBSseqData(dat = dtl,
+#                        sampleNames = snames)
+# BSobj
+# 
+# design <- data.table(trt = rep(rep(c("UVB", 
+#                                      "Ctrl", 
+#                                      "SFN"),
+#                                    each = 2),
+#                                1))
+# design$trt <- factor(design$trt,
+#                      levels = unique(design$trt))
+# design
+# 
+# DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
+#                              design = design,
+#                              formula = ~ trt)
+# 
+# # a. Control vs. UVB at Week 2----
+# DMLtest.Ctrl.UVB.W2 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "trtCtrl")
+# 
+# DMLtest.Ctrl.UVB.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W2$chr))
+# head(pct[, c("X02w_CON_0",
+#              "X02w_CON_1",
+#              "X02w_UVB_0",
+#              "X02w_UVB_1")])
+# DMLtest.Ctrl.UVB.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X02w_CON_0",
+#                                                            "X02w_CON_1",
+#                                                            "X02w_UVB_0",
+#                                                            "X02w_UVB_1")]),
+#                                         DMLtest.Ctrl.UVB.W2,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.Ctrl.UVB.W2$mu.ctrl2w <- (DMLtest.Ctrl.UVB.W2$X02w_CON_0 + DMLtest.Ctrl.UVB.W2$X02w_CON_1)/2
+# DMLtest.Ctrl.UVB.W2$mu.uvb2w <- (DMLtest.Ctrl.UVB.W2$X02w_UVB_0 + DMLtest.Ctrl.UVB.W2$X02w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.UVB.W2$mu <- (DMLtest.Ctrl.UVB.W2$mu.ctrl2w + DMLtest.Ctrl.UVB.W2$mu.uvb2w)/2
+# DMLtest.Ctrl.UVB.W2$diff <- (DMLtest.Ctrl.UVB.W2$mu.ctrl2w - DMLtest.Ctrl.UVB.W2$mu.uvb2w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# # NOTE: FLIP THE FIGURE!
+# dtp1 <- DMLtest.Ctrl.UVB.W2[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w2.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot((-1)*dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in UVB vs. Control\nat Week 2, FDR < 0.1")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # b. SFN vs. UVB at Week 2----
+# DMLtest.SFN.UVB.W2 <- DMLtest.multiFactor(DMLfit,
+#                                           coef = "trtSFN")
+# head(DMLtest.SFN.UVB.W2)
+# DMLtest.SFN.UVB.W2$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W2$chr))
+# 
+# DMLtest.SFN.UVB.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                   pct[, c("X02w_SFN_0",
+#                                                           "X02w_SFN_1",
+#                                                           "X02w_UVB_0",
+#                                                           "X02w_UVB_1")]),
+#                                        DMLtest.SFN.UVB.W2,
+#                                        by = c("chr",
+#                                               "pos")))
+# DMLtest.SFN.UVB.W2$mu.sfn2w <- (DMLtest.SFN.UVB.W2$X02w_SFN_0 + DMLtest.SFN.UVB.W2$X02w_SFN_1)/2
+# DMLtest.SFN.UVB.W2$mu.uvb2w <- (DMLtest.SFN.UVB.W2$X02w_UVB_0 + DMLtest.SFN.UVB.W2$X02w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.SFN.UVB.W2$mu <- (DMLtest.SFN.UVB.W2$mu.sfn2w + DMLtest.SFN.UVB.W2$mu.uvb2w)/2
+# DMLtest.SFN.UVB.W2$diff <- (DMLtest.SFN.UVB.W2$mu.sfn2w - DMLtest.SFN.UVB.W2$mu.uvb2w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# dtp1 <- DMLtest.SFN.UVB.W2[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w2.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 2, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # Heatmaps----
+# uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W2[fdrs < 0.1 & diff < 0]$pos)
+# uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W2[fdrs < 0.1 & dtp1$diff < 0]$pos)
+# hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
+# l1 <- DMLtest.Ctrl.UVB.W2[pos %in% hyper, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# l1$diff <- (-1)*l1$diff
+# l2 <- DMLtest.SFN.UVB.W2[pos %in% hyper, c("gene", 
+#                                            "pos", 
+#                                            "diff")]
+# # Venn diagram----
+# length(uvb.hyper.1)
+# length(uvb.hyper.2)
+# length(hyper)
+# 
+# uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W2[fdrs < 0.1 & diff > 0]$pos)
+# uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W2[fdrs < 0.1 & dtp1$diff > 0]$pos)
+# hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
+# l3 <- DMLtest.Ctrl.UVB.W2[pos %in% hypo, c("gene", 
+#                                            "pos", 
+#                                            "diff")]
+# l3$diff <- (-1)*l3$diff
+# l4 <- DMLtest.SFN.UVB.W2[pos %in% hypo, c("gene", 
+#                                           "pos", 
+#                                           "diff")]
+# # Venn diagram----
+# length(uvb.hypo.1)
+# length(uvb.hypo.2)
+# length(hypo)
+# 
+# ll <- merge(l1,
+#             l2,
+#             by = c("gene", 
+#                    "pos"))
+# ll2 <- merge(l3,
+#              l4,
+#              by = c("gene", 
+#                     "pos"))
+# ll <- rbind.data.frame(ll,
+#                        ll2)
+# 
+# ll$reg <- paste(ll$gene,
+#                 ll$pos,
+#                 sep = "_")
+# write.csv(ll,
+#           file = "tmp/w2.csv")
+# 
+# ll <- melt.data.table(data = ll,
+#                       id.vars = c(1, 5),
+#                       measure.vars = 3:4,
+#                       variable.name = "Comparison",
+#                       value.name = "Methyl Diff")
+# ll$reg <- factor(ll$reg)
+# ll$Comparison <- factor(ll$Comparison,
+#                         levels = rev(c("diff.x",
+#                                        "diff.y")),
+#                         labels = rev(c("UVB - Ctrl",
+#                                        "SFN - UVB")))
+# 
+# lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
+# ll$reg <- factor(ll$reg,
+#                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# ll
+# 
+# p1 <- ggplot(data = ll) +
+#   coord_polar("y",
+#               start = 0,
+#               direction = -1) +
+#   geom_tile(aes(x =  as.numeric(Comparison),
+#                 y = reg, 
+#                 fill = `Methyl Diff`),
+#             color = "white") +
+#   geom_text(data = ll[Comparison == "UVB - Ctrl", ],
+#             aes(x = rep(1.75,
+#                         nlevels(reg)),
+#                 y = reg,
+#                 label = unique(reg),
+#                 angle = 90 + seq(from = 0,
+#                                  to = 360,
+#                                  length.out = nlevels(reg))[as.numeric(reg)]),
+#             hjust = 0,
+#             color = "black") +
+#   scale_fill_gradient2(low = "red", 
+#                        high = "green", 
+#                        mid = "grey", 
+#                        midpoint = 0, 
+#                        name = "Methyl Diff") +
+#   scale_x_continuous(limits = c(0, 
+#                                 max(as.numeric(ll$Comparison)) + 0.5),
+#                      expand = c(0, 0)) + 
+#   scale_y_discrete("",
+#                    expand = c(0, 0)) +
+#   ggtitle("Changes in Controls Over Time") + 
+#   theme(plot.title = element_text(hjust = 0.5),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank())
+# 
+# tiff(filename = "tmp/skin_uvb_heatmap_w2.tiff",
+#      height = 10,
+#      width = 10,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# print(p1)
+# graphics.off()
+# 
+# # DMR Part III: Week15 Comparisons----
+# snames <- c("W15UVB1",
+#             "W15UVB2",
+#             "W15Ctrl1",
+#             "W15Ctrl2",
+#             "W15SFN1",
+#             "W15SFN2")
+# 
+# # Multi-factor analysis (treatment + time + interaction)----
+# dtl <- list(data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_UVB_0.N,
+#                        X = dt1$X15w_UVB_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_UVB_1.N,
+#                        X = dt1$X15w_UVB_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_CON_0.N,
+#                        X = dt1$X15w_CON_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_CON_1.N,
+#                        X = dt1$X15w_CON_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_SFN_0.N,
+#                        X = dt1$X15w_SFN_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_SFN_1.N,
+#                        X = dt1$X15w_SFN_1.X))
+# dtl
+# 
+# BSobj <- makeBSseqData(dat = dtl,
+#                        sampleNames = snames)
+# BSobj
+# 
+# design <- data.table(trt = rep(rep(c("UVB", 
+#                                      "Ctrl", 
+#                                      "SFN"),
+#                                    each = 2),
+#                                1))
+# design$trt <- factor(design$trt,
+#                      levels = unique(design$trt))
+# design
+# 
+# DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
+#                              design = design,
+#                              formula = ~ trt)
+# 
+# # a. Control vs. UVB at Week 15----
+# DMLtest.Ctrl.UVB.W15 <- DMLtest.multiFactor(DMLfit,
+#                                             coef = "trtCtrl")
+# 
+# DMLtest.Ctrl.UVB.W15$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W15$chr))
+# head(pct[, c("X15w_CON_0",
+#              "X15w_CON_1",
+#              "X15w_UVB_0",
+#              "X15w_UVB_1")])
+# DMLtest.Ctrl.UVB.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                     pct[, c("X15w_CON_0",
+#                                                             "X15w_CON_1",
+#                                                             "X15w_UVB_0",
+#                                                             "X15w_UVB_1")]),
+#                                          DMLtest.Ctrl.UVB.W15,
+#                                          by = c("chr",
+#                                                 "pos")))
+# DMLtest.Ctrl.UVB.W15$mu.ctrl15w <- (DMLtest.Ctrl.UVB.W15$X15w_CON_0 + DMLtest.Ctrl.UVB.W15$X15w_CON_1)/2
+# DMLtest.Ctrl.UVB.W15$mu.uvb15w <- (DMLtest.Ctrl.UVB.W15$X15w_UVB_0 + DMLtest.Ctrl.UVB.W15$X15w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.UVB.W15$mu <- (DMLtest.Ctrl.UVB.W15$mu.ctrl15w + DMLtest.Ctrl.UVB.W15$mu.uvb15w)/2
+# DMLtest.Ctrl.UVB.W15$diff <- (DMLtest.Ctrl.UVB.W15$mu.ctrl15w - DMLtest.Ctrl.UVB.W15$mu.uvb15w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# # NOTE: FLIP THE FIGURE!
+# dtp1 <- DMLtest.Ctrl.UVB.W15[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w15.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot((-1)*dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in UVB vs. Control\nat Week 15, FDR < 0.1")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # b. SFN vs. UVB at Week 15----
+# DMLtest.SFN.UVB.W15 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "trtSFN")
+# head(DMLtest.SFN.UVB.W15)
+# DMLtest.SFN.UVB.W15$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W15$chr))
+# 
+# DMLtest.SFN.UVB.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X15w_SFN_0",
+#                                                            "X15w_SFN_1",
+#                                                            "X15w_UVB_0",
+#                                                            "X15w_UVB_1")]),
+#                                         DMLtest.SFN.UVB.W15,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.SFN.UVB.W15$mu.sfn15w <- (DMLtest.SFN.UVB.W15$X15w_SFN_0 + DMLtest.SFN.UVB.W15$X15w_SFN_1)/2
+# DMLtest.SFN.UVB.W15$mu.uvb15w <- (DMLtest.SFN.UVB.W15$X15w_UVB_0 + DMLtest.SFN.UVB.W15$X15w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.SFN.UVB.W15$mu <- (DMLtest.SFN.UVB.W15$mu.sfn15w + DMLtest.SFN.UVB.W15$mu.uvb15w)/2
+# DMLtest.SFN.UVB.W15$diff <- (DMLtest.SFN.UVB.W15$mu.sfn15w - DMLtest.SFN.UVB.W15$mu.uvb15w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# dtp1 <- DMLtest.SFN.UVB.W15[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w15.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 15, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # Heatmaps----
+# uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W15[fdrs < 0.1 & diff < 0]$pos)
+# uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W15[fdrs < 0.1 & dtp1$diff < 0]$pos)
+# hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
+# l1 <- DMLtest.Ctrl.UVB.W15[pos %in% hyper, c("gene", 
+#                                              "pos", 
+#                                              "diff")]
+# l1$diff <- (-1)*l1$diff
+# l2 <- DMLtest.SFN.UVB.W15[pos %in% hyper, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# # Venn diagram----
+# length(uvb.hyper.1)
+# length(uvb.hyper.2)
+# length(hyper)
+# 
+# uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W15[fdrs < 0.1 & diff > 0]$pos)
+# uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W15[fdrs < 0.1 & dtp1$diff > 0]$pos)
+# hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
+# l3 <- DMLtest.Ctrl.UVB.W15[pos %in% hypo, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# l3$diff <- (-1)*l3$diff
+# l4 <- DMLtest.SFN.UVB.W15[pos %in% hypo, c("gene", 
+#                                            "pos", 
+#                                            "diff")]
+# # Venn diagram----
+# length(uvb.hypo.1)
+# length(uvb.hypo.2)
+# length(hypo)
+# 
+# ll <- merge(l1,
+#             l2,
+#             by = c("gene", 
+#                    "pos"))
+# ll2 <- merge(l3,
+#              l4,
+#              by = c("gene", 
+#                     "pos"))
+# ll <- rbind.data.frame(ll,
+#                        ll2)
+# 
+# ll$reg <- paste(ll$gene,
+#                 ll$pos,
+#                 sep = "_")
+# write.csv(ll,
+#           file = "tmp/w15.csv")
+# 
+# ll <- melt.data.table(data = ll,
+#                       id.vars = c(1, 5),
+#                       measure.vars = 3:4,
+#                       variable.name = "Comparison",
+#                       value.name = "Methyl Diff")
+# ll$reg <- factor(ll$reg)
+# ll$Comparison <- factor(ll$Comparison,
+#                         levels = rev(c("diff.x",
+#                                        "diff.y")),
+#                         labels = rev(c("UVB - Ctrl",
+#                                        "SFN - UVB")))
+# 
+# lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
+# ll$reg <- factor(ll$reg,
+#                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# ll
+# 
+# p1 <- ggplot(data = ll) +
+#   coord_polar("y",
+#               start = 0,
+#               direction = -1) +
+#   geom_tile(aes(x =  as.numeric(Comparison),
+#                 y = reg, 
+#                 fill = `Methyl Diff`),
+#             color = "white") +
+#   geom_text(data = ll[Comparison == "UVB - Ctrl", ],
+#             aes(x = rep(1.75,
+#                         nlevels(reg)),
+#                 y = reg,
+#                 label = unique(reg),
+#                 angle = 90 + seq(from = 0,
+#                                  to = 360,
+#                                  length.out = nlevels(reg))[as.numeric(reg)]),
+#             hjust = 0,
+#             color = "black") +
+#   scale_fill_gradient2(low = "red", 
+#                        high = "green", 
+#                        mid = "grey", 
+#                        midpoint = 0, 
+#                        name = "Methyl Diff") +
+#   scale_x_continuous(limits = c(0, 
+#                                 max(as.numeric(ll$Comparison)) + 0.5),
+#                      expand = c(0, 0)) + 
+#   scale_y_discrete("",
+#                    expand = c(0, 0)) +
+#   ggtitle("Changes in Controls Over Time") + 
+#   theme(plot.title = element_text(hjust = 0.5),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank())
+# 
+# tiff(filename = "tmp/skin_uvb_heatmap_w15.tiff",
+#      height = 10,
+#      width = 10,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# print(p1)
+# graphics.off()
+# 
+# # DMR Part IV: Week25 Comparisons----
+# snames <- c("W25UVB1",
+#             "W25UVB2",
+#             "W25Ctrl1",
+#             "W25Ctrl2",
+#             "W25SFN1",
+#             "W25SFN2")
+# 
+# # Multi-factor analysis (treatment + time + interaction)----
+# dtl <- list(data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_UVB_0.N,
+#                        X = dt1$X25w_UVB_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_UVB_1.N,
+#                        X = dt1$X25w_UVB_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_CON_0.N,
+#                        X = dt1$X25w_CON_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_CON_1.N,
+#                        X = dt1$X25w_CON_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_SFN_0.N,
+#                        X = dt1$X25w_SFN_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_SFN_1.N,
+#                        X = dt1$X25w_SFN_1.X))
+# dtl
+# 
+# BSobj <- makeBSseqData(dat = dtl,
+#                        sampleNames = snames)
+# BSobj
+# 
+# design <- data.table(trt = rep(rep(c("UVB", 
+#                                      "Ctrl", 
+#                                      "SFN"),
+#                                    each = 2),
+#                                1))
+# design$trt <- factor(design$trt,
+#                      levels = unique(design$trt))
+# design
+# 
+# DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
+#                              design = design,
+#                              formula = ~ trt)
+# 
+# # a. Control vs. UVB at Week 25----
+# DMLtest.Ctrl.UVB.W25 <- DMLtest.multiFactor(DMLfit,
+#                                             coef = "trtCtrl")
+# 
+# DMLtest.Ctrl.UVB.W25$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W25$chr))
+# head(pct[, c("X25w_CON_0",
+#              "X25w_CON_1",
+#              "X25w_UVB_0",
+#              "X25w_UVB_1")])
+# DMLtest.Ctrl.UVB.W25 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                     pct[, c("X25w_CON_0",
+#                                                             "X25w_CON_1",
+#                                                             "X25w_UVB_0",
+#                                                             "X25w_UVB_1")]),
+#                                          DMLtest.Ctrl.UVB.W25,
+#                                          by = c("chr",
+#                                                 "pos")))
+# DMLtest.Ctrl.UVB.W25$mu.ctrl25w <- (DMLtest.Ctrl.UVB.W25$X25w_CON_0 + DMLtest.Ctrl.UVB.W25$X25w_CON_1)/2
+# DMLtest.Ctrl.UVB.W25$mu.uvb25w <- (DMLtest.Ctrl.UVB.W25$X25w_UVB_0 + DMLtest.Ctrl.UVB.W25$X25w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.UVB.W25$mu <- (DMLtest.Ctrl.UVB.W25$mu.ctrl25w + DMLtest.Ctrl.UVB.W25$mu.uvb25w)/2
+# DMLtest.Ctrl.UVB.W25$diff <- (DMLtest.Ctrl.UVB.W25$mu.ctrl25w - DMLtest.Ctrl.UVB.W25$mu.uvb25w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# # NOTE: FLIP THE FIGURE!
+# dtp1 <- DMLtest.Ctrl.UVB.W25[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w25.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot((-1)*dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in UVB vs. Control\nat Week 25, FDR < 0.1")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # b. SFN vs. UVB at Week 25----
+# DMLtest.SFN.UVB.W25 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "trtSFN")
+# head(DMLtest.SFN.UVB.W25)
+# DMLtest.SFN.UVB.W25$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W25$chr))
+# 
+# DMLtest.SFN.UVB.W25 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X25w_SFN_0",
+#                                                            "X25w_SFN_1",
+#                                                            "X25w_UVB_0",
+#                                                            "X25w_UVB_1")]),
+#                                         DMLtest.SFN.UVB.W25,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.SFN.UVB.W25$mu.sfn25w <- (DMLtest.SFN.UVB.W25$X25w_SFN_0 + DMLtest.SFN.UVB.W25$X25w_SFN_1)/2
+# DMLtest.SFN.UVB.W25$mu.uvb25w <- (DMLtest.SFN.UVB.W25$X25w_UVB_0 + DMLtest.SFN.UVB.W25$X25w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.SFN.UVB.W25$mu <- (DMLtest.SFN.UVB.W25$mu.sfn25w + DMLtest.SFN.UVB.W25$mu.uvb25w)/2
+# DMLtest.SFN.UVB.W25$diff <- (DMLtest.SFN.UVB.W25$mu.sfn25w - DMLtest.SFN.UVB.W25$mu.uvb25w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# dtp1 <- DMLtest.SFN.UVB.W25[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w25.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 25, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # Heatmaps----
+# uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W25[fdrs < 0.1 & diff < 0]$pos)
+# uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W25[fdrs < 0.1 & dtp1$diff < 0]$pos)
+# hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
+# l1 <- DMLtest.Ctrl.UVB.W25[pos %in% hyper, c("gene", 
+#                                              "pos", 
+#                                              "diff")]
+# l1$diff <- (-1)*l1$diff
+# l2 <- DMLtest.SFN.UVB.W25[pos %in% hyper, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# # Venn diagram----
+# length(uvb.hyper.1)
+# length(uvb.hyper.2)
+# length(hyper)
+# 
+# uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W25[fdrs < 0.1 & diff > 0]$pos)
+# uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W25[fdrs < 0.1 & dtp1$diff > 0]$pos)
+# hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
+# l3 <- DMLtest.Ctrl.UVB.W25[pos %in% hypo, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# l3$diff <- (-1)*l3$diff
+# l4 <- DMLtest.SFN.UVB.W25[pos %in% hypo, c("gene", 
+#                                            "pos", 
+#                                            "diff")]
+# # Venn diagram----
+# length(uvb.hypo.1)
+# length(uvb.hypo.2)
+# length(hypo)
+# 
+# ll <- merge(l1,
+#             l2,
+#             by = c("gene", 
+#                    "pos"))
+# ll2 <- merge(l3,
+#              l4,
+#              by = c("gene", 
+#                     "pos"))
+# ll <- rbind.data.frame(ll,
+#                        ll2)
+# 
+# ll$reg <- paste(ll$gene,
+#                 ll$pos,
+#                 sep = "_")
+# write.csv(ll,
+#           file = "tmp/w25.csv")
+# 
+# ll <- melt.data.table(data = ll,
+#                       id.vars = c(1, 5),
+#                       measure.vars = 3:4,
+#                       variable.name = "Comparison",
+#                       value.name = "Methyl Diff")
+# ll$reg <- factor(ll$reg)
+# ll$Comparison <- factor(ll$Comparison,
+#                         levels = rev(c("diff.x",
+#                                        "diff.y")),
+#                         labels = rev(c("UVB - Ctrl",
+#                                        "SFN - UVB")))
+# 
+# lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
+# ll$reg <- factor(ll$reg,
+#                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# ll
+# 
+# p1 <- ggplot(data = ll) +
+#   coord_polar("y",
+#               start = 0,
+#               direction = -1) +
+#   geom_tile(aes(x =  as.numeric(Comparison),
+#                 y = reg, 
+#                 fill = `Methyl Diff`),
+#             color = "white") +
+#   geom_text(data = ll[Comparison == "UVB - Ctrl", ],
+#             aes(x = rep(1.75,
+#                         nlevels(reg)),
+#                 y = reg,
+#                 label = unique(reg),
+#                 angle = 90 + seq(from = 0,
+#                                  to = 360,
+#                                  length.out = nlevels(reg))[as.numeric(reg)]),
+#             hjust = 0,
+#             color = "black") +
+#   scale_fill_gradient2(low = "red", 
+#                        high = "green", 
+#                        mid = "grey", 
+#                        midpoint = 0, 
+#                        name = "Methyl Diff") +
+#   scale_x_continuous(limits = c(0, 
+#                                 max(as.numeric(ll$Comparison)) + 0.5),
+#                      expand = c(0, 0)) + 
+#   scale_y_discrete("",
+#                    expand = c(0, 0)) +
+#   ggtitle("Changes in Controls Over Time") + 
+#   theme(plot.title = element_text(hjust = 0.5),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank())
+# 
+# tiff(filename = "tmp/skin_uvb_heatmap_w25.tiff",
+#      height = 10,
+#      width = 10,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# print(p1)
+# graphics.off()
+
 
 # Regions----
 kable(data.table(table(substr(dt1$anno, 1, 9))))
@@ -137,6 +1243,18 @@ kable(data.table(table(dt1$reg)))
   # |3' UTR     |  4396|
   # |Downstream | 64038|
 
+# # CHECK: Il23r, Tnfrsf25 and Fcer1g genes diff expressed in RNA
+# tmp <- dt1[dt1$gene %in% c("Il23r",
+#                            "Tnfrsf25",
+#                            "Fcer1g"), ]
+# tmp$pctLG <- tmp$WJ01.X/tmp$WJ01.N
+# tmp$pctHG <- tmp$WJ02.X/tmp$WJ02.N
+# tmp$pctTIIA <- tmp$WJ04.X/tmp$WJ04.N
+# tmp
+# write.csv(tmp,
+#           file = "tmp/mes13_methyl_seq_3-genes.csv",
+#           row.names = FALSE)
+
 # CpG distribution and coverage----
 p2 <- ggplot(dt1,
              aes(x = CpG)) +
@@ -165,7 +1283,7 @@ print(p2)
 graphics.off()
 
 # Percent methylation----
-tmp <- as.matrix(dt1[, WJ01.N:WJ03.X])
+tmp <- as.matrix(dt1[, WJ01.N:WJ04.X])
 head(tmp)
 
 dtN <- tmp[, seq(1,
@@ -178,6 +1296,16 @@ dtX <- tmp[, seq(2,
                  by = 2)]
 head(dtX)
 
+# Add 0.5 to all NAs and zeros in meth. hits
+# NOTE: if there were no hits (N = NA or 0), the pct will be NA anyway
+dtX <- apply(dtX,
+             2,
+             function(a) {
+               a[is.na(a)] <- a[a == 0] <- 0.5
+               return(a)
+             })
+dtX
+
 pct <- dtX/dtN
 colnames(pct) <- substr(colnames(pct),
                         1,
@@ -188,7 +1316,7 @@ head(pct)
 dim(pct[rowSums(pct) == 0, ])
 dim(pct[is.na(rowSums(pct)), ])
 dim(pct)
-# 29,647 out of 217,155 rows
+# 29,563 out of 217,155 rows
 
 ndx.keep <- rowSums(pct) != 0 & !is.na(rowSums(pct))
 pct <- pct[ndx.keep, ]
@@ -196,7 +1324,7 @@ dt1 <- dt1[ndx.keep, ]
 dtN <- dtN[ndx.keep, ]
 dtX <- dtX[ndx.keep, ]
 dim(dtX)
-# 187,191 remaine
+# 187,592  remaine
 
 # Hits per CpG average (i.e. vertical coverage)----
 t1 <- apply(dtN,
@@ -253,10 +1381,10 @@ mumth
 mumth$trt <- factor(mumth$trt,
                     levels = c("WJ02",
                                "WJ01",
-                               "WJ03"),
+                               "WJ04"),
                     labels = c("HG",
                                "LG",
-                               "MIIC"))
+                               "TIIA"))
 
 mumth$`Methylation (%)` <- 100*mumth$mu
 
@@ -314,330 +1442,416 @@ tiff(filename = "tmp/mes13_avg_sd_methyl_by_reg.tiff",
 print(p2)
 graphics.off()
 
-# Dispersion Shrinkage for Sequencing data (DSS)----
-# This is based on Wald test for beta-binomial distribution.
-# Source: https://www.bioconductor.org/packages/release/bioc/vignettes/DSS/inst/doc/DSS.pdf
-# The DM detection procedure implemented in DSS is based on a rigorous Wald test for betabinomial
-# distributions. The test statistics depend on the biological variations (characterized
-# by dispersion parameter) as well as the sequencing depth. An important part of the algorithm
-# is the estimation of dispersion parameter, which is achieved through a shrinkage estimator
-# based on a Bayesian hierarchical model [1]. An advantage of DSS is that the test can be
-# performed even when there is no biological replicates. That’s because by smoothing, the
-# neighboring CpG sites can be viewed as “pseudo-replicates", and the dispersion can still be
-# estimated with reasonable precision.
+# DNA vs. RNA----
+pctMeth <- data.table(gene = dt1$gene,
+                      anno = dt1$anno,
+                      pct)
+pctMeth$`HG-LG DNA` <- 100*(pctMeth$WJ02 - pctMeth$WJ01)
+pctMeth$`TIIA-HG DNA` <- 100*(pctMeth$WJ04 - pctMeth$WJ02)
+pctMeth
 
-# DMR Part I: Controls only (aging effect)----
-# Prepare data----
-dtl <- list(data.table(dt1[, c("chr", "pos")],
-                       N = dt1$WJ02.N,
-                       X = dt1$WJ02.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$WJ01.N,
-                       X = dt1$WJ01.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$WJ03.N,
-                       X = dt1$WJ03.X))
-dtl
+# Load RNA DiffExp----
+# NOTE: produced by mes13_rnaseq_DEGseq_TIIA_v2.R script on 04/30/2018!
+expRNA <- fread("data/mes13_tiia_genes_q-0.5_log2-0.3.csv")
+colnames(expRNA)[1] <- "gene"
 
-BSobj <- makeBSseqData(dat = dtl,
-                       sampleNames = c("HG",
-                                       "LG",
-                                       "MIIC"))
-BSobj
+rna_dna <- merge(pctMeth,
+                 expRNA,
+                 by = "gene")
+rna_dna
 
-design <- data.table(Treatment = c("HG",
-                                   "LG",
-                                   "MIIC"))
-design
+# Separate regions---
+rna_dna$reg <- as.character(rna_dna$anno)
+rna_dna$reg[substr(rna_dna$anno, 
+                   1,
+                   8) == "Promoter"] <- "Promoter"
+rna_dna$reg[substr(rna_dna$anno, 
+                   1, 
+                   4) %in% c("Exon",
+                             "Intr")] <- "Body"
+rna_dna$reg[substr(rna_dna$anno, 
+                   1, 
+                   4) %in% c("Dist",
+                             "Down")] <- "Downstream"
+rna_dna$reg <- factor(rna_dna$reg,
+                      levels = c("Promoter",
+                                 "5' UTR",
+                                 "Body",
+                                 "3' UTR",
+                                 "Downstream"))
+kable(data.table(table(dt1$reg)))
+  # |V1         |     N|
+  # |:----------|-----:|
+  # |Promoter   | 75330|
+  # |5' UTR     |   698|
+  # |Body       | 55093|
+  # |3' UTR     |  3799|
+  # |Downstream | 52672|
 
-DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
-                             design = design,
-                             formula = ~ Treatment)
-# Error in DMLfit.multiFactor(BSobj = BSobj, design = design, formula = ~Treatment) : 
-#   No enough degree of freedom to fit the linear model. Drop some terms in formula.
+g1 <- rna_dna[rna_dna$`HG-LG DNA` >= 10 & 
+                rna_dna$`HG-LG` <= -0.3 &
+                reg == "Promoter"]
+g1
+length(unique(g1$gene))
 
+g2 <- rna_dna[rna_dna$`HG-LG DNA` <= -10 & 
+                rna_dna$`HG-LG` >= 0.3 &
+                reg == "Promoter"]
+g2
+length(unique(g2$gene))
 
+g3 <- rna_dna[rna_dna$`TIIA-HG DNA` >= 10 & 
+                rna_dna$`TIIA-HG` <= -0.3 &
+                reg == "Promoter"]
+g3
+length(unique(g3$gene))
 
+g4 <- rna_dna[rna_dna$`TIIA-HG DNA` <= -10 & 
+                rna_dna$`TIIA-HG` >= 0.3 &
+                reg == "Promoter"]
+g4
+length(unique(g4$gene))
 
-# CONTINUE HERE!
+write.csv(g1,
+          file = "tmp/rna.up_dna.dn_hg-lg.csv",
+          row.names = FALSE)
+write.csv(g2,
+          file = "tmp/rna.dn_dna.up_hg-lg.csv",
+          row.names = FALSE)
+write.csv(g3,
+          file = "tmp/rna.up_dna.dn_tiia-hg.csv",
+          row.names = FALSE)
+write.csv(g4,
+          file = "tmp/rna.dn_dna.up_tiia-lg.csv",
+          row.names = FALSE)
 
-
-
-
-
-DMLfit$X
-
-# a. Control Week 15 vs. Week 2----
-DMLtest.Ctrl.W15.W2 <- DMLtest.multiFactor(DMLfit,
-                                           coef = "timeWeek15")
-
-DMLtest.Ctrl.W15.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.W15.W2$chr))
-head(pct[, c("X15w_CON_0",
-             "X15w_CON_1",
-             "X02w_CON_0",
-             "X02w_CON_1")])
-DMLtest.Ctrl.W15.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                   pct[, c("X15w_CON_0",
-                                                           "X15w_CON_1",
-                                                           "X02w_CON_0",
-                                                           "X02w_CON_1")]),
-                                        DMLtest.Ctrl.W15.W2,
-                                        by = c("chr",
-                                               "pos")))
-DMLtest.Ctrl.W15.W2$mu.ctrl15w <- (DMLtest.Ctrl.W15.W2$X15w_CON_0 + DMLtest.Ctrl.W15.W2$X15w_CON_1)/2
-DMLtest.Ctrl.W15.W2$mu.ctrl02w <- (DMLtest.Ctrl.W15.W2$X02w_CON_0 + DMLtest.Ctrl.W15.W2$X02w_CON_1)/2
-
-# Mean vs. difference----
-DMLtest.Ctrl.W15.W2$mu <- (DMLtest.Ctrl.W15.W2$mu.ctrl15w + DMLtest.Ctrl.W15.W2$mu.ctrl02w)/2
-DMLtest.Ctrl.W15.W2$diff <- (DMLtest.Ctrl.W15.W2$mu.ctrl15w - DMLtest.Ctrl.W15.W2$mu.ctrl02w)
-
-# Green: hypomethylated at Week 2; Red: hypermethylated at Week 2
-dtp1 <- DMLtest.Ctrl.W15.W2[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_ctrl_w15-w02.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot(dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylated Reads in Control\nat Week 15 vs. Week 2, FDR < 0.1")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "green")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "red")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# b. Control Week 25 vs. Week 2----
-DMLtest.Ctrl.W25.W2 <- DMLtest.multiFactor(DMLfit,
-                                           coef = "timeWeek25")
-
-DMLtest.Ctrl.W25.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.W25.W2$chr))
-head(pct[, c("X25w_CON_0",
-             "X25w_CON_1",
-             "X02w_CON_0",
-             "X02w_CON_1")])
-DMLtest.Ctrl.W25.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                   pct[, c("X25w_CON_0",
-                                                           "X25w_CON_1",
-                                                           "X02w_CON_0",
-                                                           "X02w_CON_1")]),
-                                        DMLtest.Ctrl.W25.W2,
-                                        by = c("chr",
-                                               "pos")))
-DMLtest.Ctrl.W25.W2$mu.ctrl25w <- (DMLtest.Ctrl.W25.W2$X25w_CON_0 + DMLtest.Ctrl.W25.W2$X25w_CON_1)/2
-DMLtest.Ctrl.W25.W2$mu.ctrl02w <- (DMLtest.Ctrl.W25.W2$X02w_CON_0 + DMLtest.Ctrl.W25.W2$X02w_CON_1)/2
-
-# Mean vs. difference----
-DMLtest.Ctrl.W25.W2$mu <- (DMLtest.Ctrl.W25.W2$mu.ctrl25w + DMLtest.Ctrl.W25.W2$mu.ctrl02w)/2
-DMLtest.Ctrl.W25.W2$diff <- (DMLtest.Ctrl.W25.W2$mu.ctrl25w - DMLtest.Ctrl.W25.W2$mu.ctrl02w)
-
-# Green: hypomethylated at Week 2; Red: hypermethylated at Week 2
-dtp1 <- DMLtest.Ctrl.W25.W2[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_ctrl_w25-w02.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot(dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylated Reads in Control\nat Week 25 vs. Week 2, FDR < 0.1")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "green")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "red")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# c. Control Week 25 vs. Week 15----
-# NOTE: checked teh contrast by rerunning teh analysis wiht Week 15 as reference
-# Identical estimates: proceed with the code below!
-DMLtest.Ctrl.W25.W15 <- DMLtest.multiFactor(DMLfit,
-                                            Contrast = matrix(c(0, -1, 1), 
-                                                              ncol = 1))
-
-DMLtest.Ctrl.W25.W15$chr <- as.numeric(as.character(DMLtest.Ctrl.W25.W15$chr))
-head(pct[, c("X25w_CON_0",
-             "X25w_CON_1",
-             "X15w_CON_0",
-             "X15w_CON_1")])
-DMLtest.Ctrl.W25.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                    pct[, c("X25w_CON_0",
-                                                            "X25w_CON_1",
-                                                            "X15w_CON_0",
-                                                            "X15w_CON_1")]),
-                                         DMLtest.Ctrl.W25.W15,
-                                         by = c("chr",
-                                                "pos")))
-DMLtest.Ctrl.W25.W15$mu.ctrl25w <- (DMLtest.Ctrl.W25.W15$X25w_CON_0 + DMLtest.Ctrl.W25.W15$X25w_CON_1)/2
-DMLtest.Ctrl.W25.W15$mu.ctrl15w <- (DMLtest.Ctrl.W25.W15$X15w_CON_0 + DMLtest.Ctrl.W25.W15$X15w_CON_1)/2
-
-# Mean vs. difference----
-DMLtest.Ctrl.W25.W15$mu <- (DMLtest.Ctrl.W25.W15$mu.ctrl25w + DMLtest.Ctrl.W25.W15$mu.ctrl15w)/2
-DMLtest.Ctrl.W25.W15$diff <- (DMLtest.Ctrl.W25.W15$mu.ctrl25w - DMLtest.Ctrl.W25.W15$mu.ctrl15w)
-
-# Green: hypomethylated at Week 15; Red: hypermethylated at Week 15
-dtp1 <- DMLtest.Ctrl.W25.W15[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_ctrl_w25-w15.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot(dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylated Reads in Control\nat Week 25 vs. Week 15, FDR < 0.1")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "green")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "red")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# Heatmaps 1----
-sign.15.02 <- c(unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff > 0.2]$pos),
-                unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff < -0.2]$pos))
-l1 <- DMLtest.Ctrl.W15.W2[pos %in% sign.15.02,
-                          c("gene", 
-                            "pos", 
-                            "diff")]
-
-sign.25.02 <- c(unique(DMLtest.Ctrl.W25.W2[fdrs < 0.01 & diff > 0.2]$pos),
-                unique(DMLtest.Ctrl.W25.W2[fdrs < 0.01 & diff < -0.2]$pos))
-l2 <- DMLtest.Ctrl.W25.W2[pos %in% sign.25.02,
-                          c("gene", 
-                            "pos", 
-                            "diff")]
-
-sign.25.15 <- unique(DMLtest.Ctrl.W25.W15[fdrs < 0.01 & diff > 0]$pos)
-l3 <- DMLtest.Ctrl.W25.W15[, c("gene", 
-                               "pos", 
-                               "diff")]
-
-ll <- l1[l1$pos %in% l2$pos, ]
-# ll <- ll[ll$pos %in% l3$pos, ]
-ll
-
-t1 <- merge(l1[l1$pos %in% ll$pos],
-            l2[l2$pos %in% ll$pos],
-            by = c("gene", 
-                   "pos"))
-t1 <- merge(t1[t1$pos %in% ll$pos],
-            l3[l3$pos %in% ll$pos],
-            by = c("gene", 
-                   "pos"))
-write.csv(t1,
-          file = "tmp/heatmap1.csv")
-ll <- t1
-
-ll <- melt.data.table(data = ll,
-                      id.vars = 1:2,
-                      measure.vars = 3:5,
-                      variable.name = "Comparison",
-                      value.name = "Methyl Diff")
-ll$reg <- factor(paste(ll$gene, 
-                       ll$pos,
-                       sep = "_"))
-ll$Comparison <- factor(ll$Comparison,
-                        levels = rev(c("diff.x",
-                                       "diff.y",
-                                       "diff")),
-                        labels = rev(c("w15w2",
-                                       "w25w2",
-                                       "w25w15")))
-lvls <- ll[ll$Comparison == "w15w2", ]
-ll$reg <- factor(ll$reg,
-                 levels = lvls$reg[order(lvls$`Methyl Diff`)])
-
-p1 <- ggplot(data = ll) +
-  coord_polar("y",
-              start = 0,
-              direction = -1) +
-  geom_tile(aes(x =  as.numeric(Comparison),
-                y = reg, 
-                fill = `Methyl Diff`),
-            color = "white") +
-  geom_text(data = ll[Comparison == "w25w15", ],
-            aes(x = rep(2.75,
-                        nlevels(reg)),
-                y = reg,
-                label = unique(reg),
-                angle = 90 + seq(from = 0,
-                            to = 360,
-                            length.out = nlevels(reg))[as.numeric(reg)]),
-            hjust = 0) +
-  scale_fill_gradient2(low = "red", 
-                       high = "green", 
-                       mid = "grey", 
-                       midpoint = 0, 
-                       name = "Methyl Diff") +
-  scale_x_continuous(limits = c(0, 
-                                max(as.numeric(ll$Comparison)) + 0.5),
-                     expand = c(0, 0)) + 
-  scale_y_discrete("",
-                   expand = c(0, 0)) +
-  ggtitle("Changes in Controls Over Time") + 
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title.x = element_blank(),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks.y = element_blank())
-# p1
-
-tiff(filename = "tmp/skin_uvb_heatmap_ctrl.tiff",
-     height = 8,
-     width = 8,
+p1 <- ggplot(data = rna_dna,
+             aes(x = `HG-LG DNA`,
+                 y = `HG-LG`,
+                 fill = reg)) +
+  geom_point(alpha = 0.7,
+             size = 2,
+             shape = 21) +
+  geom_text(data = unique(rna_dna[gene %in% unique(g1$gene) &
+                                    reg == "Promoter", 
+                                  c("gene",
+                                    "reg",
+                                    "HG-LG")]),
+            aes(x = 40,
+                y = `HG-LG`,
+                label = gene),
+            color = "blue",
+            size = 2) +
+  geom_text(data = unique(rna_dna[gene %in% unique(g2$gene) &
+                                    reg == "Promoter", 
+                                  c("gene",
+                                    "reg",
+                                    "HG-LG")]),
+            aes(x = -40,
+                y = `HG-LG`,
+                label = gene),
+            color = "blue",
+            size = 2) +
+  geom_hline(yintercept = c(-0.3, 0.3),
+             linetype = "dashed") +
+  geom_vline(xintercept = c(-10, 10),
+             linetype = "dashed") +
+  scale_x_continuous("DNA Methylation Difference(%)",
+                     breaks = seq(-30, 30, 10)) +
+  scale_y_continuous("RNA Expression Difference (log2)") +
+  ggtitle("HG - LG") +
+  scale_fill_manual("Region",
+                    values = c("Promoter" = "green",
+                               "5' UTR" = "white",
+                               "Body" = "blue",
+                               "3' UTR" = "grey",
+                               "Downstream" = "red")) +
+  theme(plot.title = element_text(hjust = 0.5))
+p1
+tiff(filename = "tmp/starburst_hg-lg.tiff",
+     height = 10,
+     width = 10,
      units = 'in',
      res = 300,
      compression = "lzw+p")
 print(p1)
 graphics.off()
 
-# # Heatmaps 2----
+p2 <- ggplot(data = rna_dna,
+             aes(x = `TIIA-HG DNA`,
+                 y = `TIIA-HG`,
+                 fill = reg)) +
+  geom_point(alpha = 0.7,
+             size = 2,
+             shape = 21) +
+  geom_text(data = unique(rna_dna[gene %in% unique(g3$gene) &
+                                    reg == "Promoter", 
+                                  c("gene",
+                                    "reg",
+                                    "TIIA-HG")]),
+            aes(x = 40,
+                y = `TIIA-HG`,
+                label = gene),
+            color = "blue",
+            size = 2) +
+  geom_text(data = unique(rna_dna[gene %in% unique(g4$gene) &
+                                    reg == "Promoter", 
+                                  c("gene",
+                                    "reg",
+                                    "TIIA-HG")]),
+            aes(x = -40,
+                y = `TIIA-HG`,
+                label = gene),
+            color = "blue",
+            size = 2) +
+  geom_hline(yintercept = c(-0.3, 0.3),
+             linetype = "dashed") +
+  geom_vline(xintercept = c(-10, 10),
+             linetype = "dashed") +
+  scale_x_continuous("DNA Methylation Difference(%)",
+                     breaks = seq(-30, 30, 10)) +
+  scale_y_continuous("RNA Expression Difference (log2)") +
+  ggtitle("TIIA-HG") +
+  scale_fill_manual("Region",
+                    values = c("Promoter" = "green",
+                               "5' UTR" = "white",
+                               "Body" = "blue",
+                               "3' UTR" = "grey",
+                               "Downstream" = "red")) +
+  theme(plot.title = element_text(hjust = 0.5))
+p2
+tiff(filename = "tmp/starburst_tiia-hg.tiff",
+     height = 10,
+     width = 10,
+     units = 'in',
+     res = 300,
+     compression = "lzw+p")
+print(p2)
+graphics.off()
+
+# # Dispersion Shrinkage for Sequencing data (DSS)----
+# # This is based on Wald test for beta-binomial distribution.
+# # Source: https://www.bioconductor.org/packages/release/bioc/vignettes/DSS/inst/doc/DSS.pdf
+# # The DM detection procedure implemented in DSS is based on a rigorous Wald test for betabinomial
+# # distributions. The test statistics depend on the biological variations (characterized
+# # by dispersion parameter) as well as the sequencing depth. An important part of the algorithm
+# # is the estimation of dispersion parameter, which is achieved through a shrinkage estimator
+# # based on a Bayesian hierarchical model [1]. An advantage of DSS is that the test can be
+# # performed even when there is no biological replicates. That’s because by smoothing, the
+# # neighboring CpG sites can be viewed as “pseudo-replicates", and the dispersion can still be
+# # estimated with reasonable precision.
+# 
+# # DMR Part I: Controls only (aging effect)----
+# # Prepare data----
+# dtl <- list(data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$WJ02.N,
+#                        X = dt1$WJ02.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$WJ01.N,
+#                        X = dt1$WJ01.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$WJ03.N,
+#                        X = dt1$WJ03.X))
+# dtl
+# 
+# BSobj <- makeBSseqData(dat = dtl,
+#                        sampleNames = c("HG",
+#                                        "LG",
+#                                        "TIIA"))
+# BSobj
+# 
+# design <- data.table(Treatment = c("HG",
+#                                    "LG",
+#                                    "TIIA"))
+# design
+# 
+# DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
+#                              design = design,
+#                              formula = ~ Treatment)
+# # Error in DMLfit.multiFactor(BSobj = BSobj, design = design, formula = ~Treatment) : 
+# #   No enough degree of freedom to fit the linear model. Drop some terms in formula.
+# 
+# DMLfit$X
+# 
+# # a. Control Week 15 vs. Week 2----
+# DMLtest.Ctrl.W15.W2 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "timeWeek15")
+# 
+# DMLtest.Ctrl.W15.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.W15.W2$chr))
+# head(pct[, c("X15w_CON_0",
+#              "X15w_CON_1",
+#              "X02w_CON_0",
+#              "X02w_CON_1")])
+# DMLtest.Ctrl.W15.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X15w_CON_0",
+#                                                            "X15w_CON_1",
+#                                                            "X02w_CON_0",
+#                                                            "X02w_CON_1")]),
+#                                         DMLtest.Ctrl.W15.W2,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.Ctrl.W15.W2$mu.ctrl15w <- (DMLtest.Ctrl.W15.W2$X15w_CON_0 + DMLtest.Ctrl.W15.W2$X15w_CON_1)/2
+# DMLtest.Ctrl.W15.W2$mu.ctrl02w <- (DMLtest.Ctrl.W15.W2$X02w_CON_0 + DMLtest.Ctrl.W15.W2$X02w_CON_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.W15.W2$mu <- (DMLtest.Ctrl.W15.W2$mu.ctrl15w + DMLtest.Ctrl.W15.W2$mu.ctrl02w)/2
+# DMLtest.Ctrl.W15.W2$diff <- (DMLtest.Ctrl.W15.W2$mu.ctrl15w - DMLtest.Ctrl.W15.W2$mu.ctrl02w)
+# 
+# # Green: hypomethylated at Week 2; Red: hypermethylated at Week 2
+# dtp1 <- DMLtest.Ctrl.W15.W2[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_ctrl_w15-w02.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylated Reads in Control\nat Week 15 vs. Week 2, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "green")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "red")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # b. Control Week 25 vs. Week 2----
+# DMLtest.Ctrl.W25.W2 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "timeWeek25")
+# 
+# DMLtest.Ctrl.W25.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.W25.W2$chr))
+# head(pct[, c("X25w_CON_0",
+#              "X25w_CON_1",
+#              "X02w_CON_0",
+#              "X02w_CON_1")])
+# DMLtest.Ctrl.W25.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X25w_CON_0",
+#                                                            "X25w_CON_1",
+#                                                            "X02w_CON_0",
+#                                                            "X02w_CON_1")]),
+#                                         DMLtest.Ctrl.W25.W2,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.Ctrl.W25.W2$mu.ctrl25w <- (DMLtest.Ctrl.W25.W2$X25w_CON_0 + DMLtest.Ctrl.W25.W2$X25w_CON_1)/2
+# DMLtest.Ctrl.W25.W2$mu.ctrl02w <- (DMLtest.Ctrl.W25.W2$X02w_CON_0 + DMLtest.Ctrl.W25.W2$X02w_CON_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.W25.W2$mu <- (DMLtest.Ctrl.W25.W2$mu.ctrl25w + DMLtest.Ctrl.W25.W2$mu.ctrl02w)/2
+# DMLtest.Ctrl.W25.W2$diff <- (DMLtest.Ctrl.W25.W2$mu.ctrl25w - DMLtest.Ctrl.W25.W2$mu.ctrl02w)
+# 
+# # Green: hypomethylated at Week 2; Red: hypermethylated at Week 2
+# dtp1 <- DMLtest.Ctrl.W25.W2[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_ctrl_w25-w02.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylated Reads in Control\nat Week 25 vs. Week 2, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "green")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "red")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # c. Control Week 25 vs. Week 15----
+# # NOTE: checked teh contrast by rerunning teh analysis wiht Week 15 as reference
+# # Identical estimates: proceed with the code below!
+# DMLtest.Ctrl.W25.W15 <- DMLtest.multiFactor(DMLfit,
+#                                             Contrast = matrix(c(0, -1, 1), 
+#                                                               ncol = 1))
+# 
+# DMLtest.Ctrl.W25.W15$chr <- as.numeric(as.character(DMLtest.Ctrl.W25.W15$chr))
+# head(pct[, c("X25w_CON_0",
+#              "X25w_CON_1",
+#              "X15w_CON_0",
+#              "X15w_CON_1")])
+# DMLtest.Ctrl.W25.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                     pct[, c("X25w_CON_0",
+#                                                             "X25w_CON_1",
+#                                                             "X15w_CON_0",
+#                                                             "X15w_CON_1")]),
+#                                          DMLtest.Ctrl.W25.W15,
+#                                          by = c("chr",
+#                                                 "pos")))
+# DMLtest.Ctrl.W25.W15$mu.ctrl25w <- (DMLtest.Ctrl.W25.W15$X25w_CON_0 + DMLtest.Ctrl.W25.W15$X25w_CON_1)/2
+# DMLtest.Ctrl.W25.W15$mu.ctrl15w <- (DMLtest.Ctrl.W25.W15$X15w_CON_0 + DMLtest.Ctrl.W25.W15$X15w_CON_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.W25.W15$mu <- (DMLtest.Ctrl.W25.W15$mu.ctrl25w + DMLtest.Ctrl.W25.W15$mu.ctrl15w)/2
+# DMLtest.Ctrl.W25.W15$diff <- (DMLtest.Ctrl.W25.W15$mu.ctrl25w - DMLtest.Ctrl.W25.W15$mu.ctrl15w)
+# 
+# # Green: hypomethylated at Week 15; Red: hypermethylated at Week 15
+# dtp1 <- DMLtest.Ctrl.W25.W15[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_ctrl_w25-w15.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylated Reads in Control\nat Week 25 vs. Week 15, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "green")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "red")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # Heatmaps 1----
 # sign.15.02 <- c(unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff > 0.2]$pos),
 #                 unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff < -0.2]$pos))
 # l1 <- DMLtest.Ctrl.W15.W2[pos %in% sign.15.02,
 #                           c("gene", 
 #                             "pos", 
 #                             "diff")]
-# names(l1)[3] <- "w15w2"
 # 
-# l2 <- DMLtest.Ctrl.W25.W2[pos %in% sign.15.02,
+# sign.25.02 <- c(unique(DMLtest.Ctrl.W25.W2[fdrs < 0.01 & diff > 0.2]$pos),
+#                 unique(DMLtest.Ctrl.W25.W2[fdrs < 0.01 & diff < -0.2]$pos))
+# l2 <- DMLtest.Ctrl.W25.W2[pos %in% sign.25.02,
 #                           c("gene", 
 #                             "pos", 
 #                             "diff")]
-# names(l2)[3] <- "w25w2"
 # 
-# l3 <- DMLtest.Ctrl.W25.W15[pos %in% sign.15.02,
-#                            c("gene", 
-#                              "pos", 
-#                              "diff")]
-# names(l3)[3] <- "w25w15"
+# sign.25.15 <- unique(DMLtest.Ctrl.W25.W15[fdrs < 0.01 & diff > 0]$pos)
+# l3 <- DMLtest.Ctrl.W25.W15[, c("gene", 
+#                                "pos", 
+#                                "diff")]
 # 
-# ll <- merge(l1, l2, by = c("gene", 
-#                            "pos"))
-# ll <- merge(ll, l3, by = c("gene", 
-#                            "pos"))
+# ll <- l1[l1$pos %in% l2$pos, ]
+# # ll <- ll[ll$pos %in% l3$pos, ]
 # ll
+# 
+# t1 <- merge(l1[l1$pos %in% ll$pos],
+#             l2[l2$pos %in% ll$pos],
+#             by = c("gene", 
+#                    "pos"))
+# t1 <- merge(t1[t1$pos %in% ll$pos],
+#             l3[l3$pos %in% ll$pos],
+#             by = c("gene", 
+#                    "pos"))
+# write.csv(t1,
+#           file = "tmp/heatmap1.csv")
+# ll <- t1
 # 
 # ll <- melt.data.table(data = ll,
 #                       id.vars = 1:2,
@@ -648,786 +1862,878 @@ graphics.off()
 #                        ll$pos,
 #                        sep = "_"))
 # ll$Comparison <- factor(ll$Comparison,
-#                         levels = unique(ll$Comparison))
-# 
+#                         levels = rev(c("diff.x",
+#                                        "diff.y",
+#                                        "diff")),
+#                         labels = rev(c("w15w2",
+#                                        "w25w2",
+#                                        "w25w15")))
 # lvls <- ll[ll$Comparison == "w15w2", ]
 # ll$reg <- factor(ll$reg,
 #                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
-# ll
 # 
 # p1 <- ggplot(data = ll) +
-#   geom_tile(aes(x =  Comparison,
+#   coord_polar("y",
+#               start = 0,
+#               direction = -1) +
+#   geom_tile(aes(x =  as.numeric(Comparison),
 #                 y = reg, 
 #                 fill = `Methyl Diff`),
-#             color = "black") +
+#             color = "white") +
+#   geom_text(data = ll[Comparison == "w25w15", ],
+#             aes(x = rep(2.75,
+#                         nlevels(reg)),
+#                 y = reg,
+#                 label = unique(reg),
+#                 angle = 90 + seq(from = 0,
+#                             to = 360,
+#                             length.out = nlevels(reg))[as.numeric(reg)]),
+#             hjust = 0) +
 #   scale_fill_gradient2(low = "red", 
 #                        high = "green", 
-#                        mid = "black", 
+#                        mid = "grey", 
 #                        midpoint = 0, 
-#                        # limit = c(-10, 10), 
 #                        name = "Methyl Diff") +
-#   scale_x_discrete(expand = c(0, 0)) + 
-#   scale_y_discrete("Gene Region",
+#   scale_x_continuous(limits = c(0, 
+#                                 max(as.numeric(ll$Comparison)) + 0.5),
+#                      expand = c(0, 0)) + 
+#   scale_y_discrete("",
 #                    expand = c(0, 0)) +
-#   ggtitle("Changes in Controls Over Time") +
-#   theme(plot.title = element_text(hjust = 0.5))
-# p1
+#   ggtitle("Changes in Controls Over Time") + 
+#   theme(plot.title = element_text(hjust = 0.5),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank())
+# # p1
 # 
 # tiff(filename = "tmp/skin_uvb_heatmap_ctrl.tiff",
-#      height = 20,
-#      width = 6,
+#      height = 8,
+#      width = 8,
 #      units = 'in',
 #      res = 300,
 #      compression = "lzw+p")
 # print(p1)
 # graphics.off()
-
-# DMR Part II: Week2 Comparisons----
-snames <- c("W2UVB1",
-            "W2UVB2",
-            "W2Ctrl1",
-            "W2Ctrl2",
-            "W2SFN1",
-            "W2SFN2")
-
-# Multi-factor analysis (treatment + time + interaction)----
-dtl <- list(data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X02w_UVB_0.N,
-                       X = dt1$X02w_UVB_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X02w_UVB_1.N,
-                       X = dt1$X02w_UVB_1.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X02w_CON_0.N,
-                       X = dt1$X02w_CON_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X02w_CON_1.N,
-                       X = dt1$X02w_CON_1.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X02w_SFN_0.N,
-                       X = dt1$X02w_SFN_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X02w_SFN_1.N,
-                       X = dt1$X02w_SFN_1.X))
-dtl
-
-BSobj <- makeBSseqData(dat = dtl,
-                       sampleNames = snames)
-BSobj
-
-design <- data.table(trt = rep(rep(c("UVB", 
-                                     "Ctrl", 
-                                     "SFN"),
-                                   each = 2),
-                               1))
-design$trt <- factor(design$trt,
-                     levels = unique(design$trt))
-design
-
-DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
-                             design = design,
-                             formula = ~ trt)
-
-# a. Control vs. UVB at Week 2----
-DMLtest.Ctrl.UVB.W2 <- DMLtest.multiFactor(DMLfit,
-                                           coef = "trtCtrl")
-
-DMLtest.Ctrl.UVB.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W2$chr))
-head(pct[, c("X02w_CON_0",
-             "X02w_CON_1",
-             "X02w_UVB_0",
-             "X02w_UVB_1")])
-DMLtest.Ctrl.UVB.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                   pct[, c("X02w_CON_0",
-                                                           "X02w_CON_1",
-                                                           "X02w_UVB_0",
-                                                           "X02w_UVB_1")]),
-                                        DMLtest.Ctrl.UVB.W2,
-                                        by = c("chr",
-                                               "pos")))
-DMLtest.Ctrl.UVB.W2$mu.ctrl2w <- (DMLtest.Ctrl.UVB.W2$X02w_CON_0 + DMLtest.Ctrl.UVB.W2$X02w_CON_1)/2
-DMLtest.Ctrl.UVB.W2$mu.uvb2w <- (DMLtest.Ctrl.UVB.W2$X02w_UVB_0 + DMLtest.Ctrl.UVB.W2$X02w_UVB_1)/2
-
-# Mean vs. difference----
-DMLtest.Ctrl.UVB.W2$mu <- (DMLtest.Ctrl.UVB.W2$mu.ctrl2w + DMLtest.Ctrl.UVB.W2$mu.uvb2w)/2
-DMLtest.Ctrl.UVB.W2$diff <- (DMLtest.Ctrl.UVB.W2$mu.ctrl2w - DMLtest.Ctrl.UVB.W2$mu.uvb2w)
-
-# Green: hypomethylated in UVB; Red: hypermethylated in UVB
-# NOTE: FLIP THE FIGURE!
-dtp1 <- DMLtest.Ctrl.UVB.W2[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w2.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot((-1)*dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylation in UVB vs. Control\nat Week 2, FDR < 0.1")
-points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "red")
-points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "green")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# b. SFN vs. UVB at Week 2----
-DMLtest.SFN.UVB.W2 <- DMLtest.multiFactor(DMLfit,
-                                          coef = "trtSFN")
-head(DMLtest.SFN.UVB.W2)
-DMLtest.SFN.UVB.W2$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W2$chr))
-
-DMLtest.SFN.UVB.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                  pct[, c("X02w_SFN_0",
-                                                          "X02w_SFN_1",
-                                                          "X02w_UVB_0",
-                                                          "X02w_UVB_1")]),
-                                       DMLtest.SFN.UVB.W2,
-                                       by = c("chr",
-                                              "pos")))
-DMLtest.SFN.UVB.W2$mu.sfn2w <- (DMLtest.SFN.UVB.W2$X02w_SFN_0 + DMLtest.SFN.UVB.W2$X02w_SFN_1)/2
-DMLtest.SFN.UVB.W2$mu.uvb2w <- (DMLtest.SFN.UVB.W2$X02w_UVB_0 + DMLtest.SFN.UVB.W2$X02w_UVB_1)/2
-
-# Mean vs. difference----
-DMLtest.SFN.UVB.W2$mu <- (DMLtest.SFN.UVB.W2$mu.sfn2w + DMLtest.SFN.UVB.W2$mu.uvb2w)/2
-DMLtest.SFN.UVB.W2$diff <- (DMLtest.SFN.UVB.W2$mu.sfn2w - DMLtest.SFN.UVB.W2$mu.uvb2w)
-
-# Green: hypomethylated in UVB; Red: hypermethylated in UVB
-dtp1 <- DMLtest.SFN.UVB.W2[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w2.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot(dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 2, FDR < 0.1")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "red")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "green")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# Heatmaps----
-uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W2[fdrs < 0.1 & diff < 0]$pos)
-uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W2[fdrs < 0.1 & dtp1$diff < 0]$pos)
-hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
-l1 <- DMLtest.Ctrl.UVB.W2[pos %in% hyper, c("gene", 
-                                            "pos", 
-                                            "diff")]
-l1$diff <- (-1)*l1$diff
-l2 <- DMLtest.SFN.UVB.W2[pos %in% hyper, c("gene", 
-                                           "pos", 
-                                           "diff")]
-# Venn diagram----
-length(uvb.hyper.1)
-length(uvb.hyper.2)
-length(hyper)
-
-uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W2[fdrs < 0.1 & diff > 0]$pos)
-uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W2[fdrs < 0.1 & dtp1$diff > 0]$pos)
-hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
-l3 <- DMLtest.Ctrl.UVB.W2[pos %in% hypo, c("gene", 
-                                           "pos", 
-                                           "diff")]
-l3$diff <- (-1)*l3$diff
-l4 <- DMLtest.SFN.UVB.W2[pos %in% hypo, c("gene", 
-                                          "pos", 
-                                          "diff")]
-# Venn diagram----
-length(uvb.hypo.1)
-length(uvb.hypo.2)
-length(hypo)
-
-ll <- merge(l1,
-            l2,
-            by = c("gene", 
-                   "pos"))
-ll2 <- merge(l3,
-             l4,
-             by = c("gene", 
-                    "pos"))
-ll <- rbind.data.frame(ll,
-                       ll2)
-
-ll$reg <- paste(ll$gene,
-                ll$pos,
-                sep = "_")
-write.csv(ll,
-          file = "tmp/w2.csv")
-
-ll <- melt.data.table(data = ll,
-                      id.vars = c(1, 5),
-                      measure.vars = 3:4,
-                      variable.name = "Comparison",
-                      value.name = "Methyl Diff")
-ll$reg <- factor(ll$reg)
-ll$Comparison <- factor(ll$Comparison,
-                        levels = rev(c("diff.x",
-                                       "diff.y")),
-                        labels = rev(c("UVB - Ctrl",
-                                       "SFN - UVB")))
-
-lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
-ll$reg <- factor(ll$reg,
-                 levels = lvls$reg[order(lvls$`Methyl Diff`)])
-ll
-
-p1 <- ggplot(data = ll) +
-  coord_polar("y",
-              start = 0,
-              direction = -1) +
-  geom_tile(aes(x =  as.numeric(Comparison),
-                y = reg, 
-                fill = `Methyl Diff`),
-            color = "white") +
-  geom_text(data = ll[Comparison == "UVB - Ctrl", ],
-            aes(x = rep(1.75,
-                        nlevels(reg)),
-                y = reg,
-                label = unique(reg),
-                angle = 90 + seq(from = 0,
-                                 to = 360,
-                                 length.out = nlevels(reg))[as.numeric(reg)]),
-            hjust = 0,
-            color = "black") +
-  scale_fill_gradient2(low = "red", 
-                       high = "green", 
-                       mid = "grey", 
-                       midpoint = 0, 
-                       name = "Methyl Diff") +
-  scale_x_continuous(limits = c(0, 
-                                max(as.numeric(ll$Comparison)) + 0.5),
-                     expand = c(0, 0)) + 
-  scale_y_discrete("",
-                   expand = c(0, 0)) +
-  ggtitle("Changes in Controls Over Time") + 
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title.x = element_blank(),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks.y = element_blank())
-
-tiff(filename = "tmp/skin_uvb_heatmap_w2.tiff",
-     height = 10,
-     width = 10,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-print(p1)
-graphics.off()
-
-# DMR Part III: Week15 Comparisons----
-snames <- c("W15UVB1",
-            "W15UVB2",
-            "W15Ctrl1",
-            "W15Ctrl2",
-            "W15SFN1",
-            "W15SFN2")
-
-# Multi-factor analysis (treatment + time + interaction)----
-dtl <- list(data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X15w_UVB_0.N,
-                       X = dt1$X15w_UVB_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X15w_UVB_1.N,
-                       X = dt1$X15w_UVB_1.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X15w_CON_0.N,
-                       X = dt1$X15w_CON_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X15w_CON_1.N,
-                       X = dt1$X15w_CON_1.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X15w_SFN_0.N,
-                       X = dt1$X15w_SFN_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X15w_SFN_1.N,
-                       X = dt1$X15w_SFN_1.X))
-dtl
-
-BSobj <- makeBSseqData(dat = dtl,
-                       sampleNames = snames)
-BSobj
-
-design <- data.table(trt = rep(rep(c("UVB", 
-                                     "Ctrl", 
-                                     "SFN"),
-                                   each = 2),
-                               1))
-design$trt <- factor(design$trt,
-                     levels = unique(design$trt))
-design
-
-DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
-                             design = design,
-                             formula = ~ trt)
-
-# a. Control vs. UVB at Week 15----
-DMLtest.Ctrl.UVB.W15 <- DMLtest.multiFactor(DMLfit,
-                                            coef = "trtCtrl")
-
-DMLtest.Ctrl.UVB.W15$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W15$chr))
-head(pct[, c("X15w_CON_0",
-             "X15w_CON_1",
-             "X15w_UVB_0",
-             "X15w_UVB_1")])
-DMLtest.Ctrl.UVB.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                    pct[, c("X15w_CON_0",
-                                                            "X15w_CON_1",
-                                                            "X15w_UVB_0",
-                                                            "X15w_UVB_1")]),
-                                         DMLtest.Ctrl.UVB.W15,
-                                         by = c("chr",
-                                                "pos")))
-DMLtest.Ctrl.UVB.W15$mu.ctrl15w <- (DMLtest.Ctrl.UVB.W15$X15w_CON_0 + DMLtest.Ctrl.UVB.W15$X15w_CON_1)/2
-DMLtest.Ctrl.UVB.W15$mu.uvb15w <- (DMLtest.Ctrl.UVB.W15$X15w_UVB_0 + DMLtest.Ctrl.UVB.W15$X15w_UVB_1)/2
-
-# Mean vs. difference----
-DMLtest.Ctrl.UVB.W15$mu <- (DMLtest.Ctrl.UVB.W15$mu.ctrl15w + DMLtest.Ctrl.UVB.W15$mu.uvb15w)/2
-DMLtest.Ctrl.UVB.W15$diff <- (DMLtest.Ctrl.UVB.W15$mu.ctrl15w - DMLtest.Ctrl.UVB.W15$mu.uvb15w)
-
-# Green: hypomethylated in UVB; Red: hypermethylated in UVB
-# NOTE: FLIP THE FIGURE!
-dtp1 <- DMLtest.Ctrl.UVB.W15[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w15.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot((-1)*dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylation in UVB vs. Control\nat Week 15, FDR < 0.1")
-points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "red")
-points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "green")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# b. SFN vs. UVB at Week 15----
-DMLtest.SFN.UVB.W15 <- DMLtest.multiFactor(DMLfit,
-                                           coef = "trtSFN")
-head(DMLtest.SFN.UVB.W15)
-DMLtest.SFN.UVB.W15$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W15$chr))
-
-DMLtest.SFN.UVB.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                   pct[, c("X15w_SFN_0",
-                                                           "X15w_SFN_1",
-                                                           "X15w_UVB_0",
-                                                           "X15w_UVB_1")]),
-                                        DMLtest.SFN.UVB.W15,
-                                        by = c("chr",
-                                               "pos")))
-DMLtest.SFN.UVB.W15$mu.sfn15w <- (DMLtest.SFN.UVB.W15$X15w_SFN_0 + DMLtest.SFN.UVB.W15$X15w_SFN_1)/2
-DMLtest.SFN.UVB.W15$mu.uvb15w <- (DMLtest.SFN.UVB.W15$X15w_UVB_0 + DMLtest.SFN.UVB.W15$X15w_UVB_1)/2
-
-# Mean vs. difference----
-DMLtest.SFN.UVB.W15$mu <- (DMLtest.SFN.UVB.W15$mu.sfn15w + DMLtest.SFN.UVB.W15$mu.uvb15w)/2
-DMLtest.SFN.UVB.W15$diff <- (DMLtest.SFN.UVB.W15$mu.sfn15w - DMLtest.SFN.UVB.W15$mu.uvb15w)
-
-# Green: hypomethylated in UVB; Red: hypermethylated in UVB
-dtp1 <- DMLtest.SFN.UVB.W15[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w15.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot(dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 15, FDR < 0.1")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "red")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "green")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# Heatmaps----
-uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W15[fdrs < 0.1 & diff < 0]$pos)
-uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W15[fdrs < 0.1 & dtp1$diff < 0]$pos)
-hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
-l1 <- DMLtest.Ctrl.UVB.W15[pos %in% hyper, c("gene", 
-                                             "pos", 
-                                             "diff")]
-l1$diff <- (-1)*l1$diff
-l2 <- DMLtest.SFN.UVB.W15[pos %in% hyper, c("gene", 
-                                            "pos", 
-                                            "diff")]
-# Venn diagram----
-length(uvb.hyper.1)
-length(uvb.hyper.2)
-length(hyper)
-
-uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W15[fdrs < 0.1 & diff > 0]$pos)
-uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W15[fdrs < 0.1 & dtp1$diff > 0]$pos)
-hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
-l3 <- DMLtest.Ctrl.UVB.W15[pos %in% hypo, c("gene", 
-                                            "pos", 
-                                            "diff")]
-l3$diff <- (-1)*l3$diff
-l4 <- DMLtest.SFN.UVB.W15[pos %in% hypo, c("gene", 
-                                           "pos", 
-                                           "diff")]
-# Venn diagram----
-length(uvb.hypo.1)
-length(uvb.hypo.2)
-length(hypo)
-
-ll <- merge(l1,
-            l2,
-            by = c("gene", 
-                   "pos"))
-ll2 <- merge(l3,
-             l4,
-             by = c("gene", 
-                    "pos"))
-ll <- rbind.data.frame(ll,
-                       ll2)
-
-ll$reg <- paste(ll$gene,
-                ll$pos,
-                sep = "_")
-write.csv(ll,
-          file = "tmp/w15.csv")
-
-ll <- melt.data.table(data = ll,
-                      id.vars = c(1, 5),
-                      measure.vars = 3:4,
-                      variable.name = "Comparison",
-                      value.name = "Methyl Diff")
-ll$reg <- factor(ll$reg)
-ll$Comparison <- factor(ll$Comparison,
-                        levels = rev(c("diff.x",
-                                       "diff.y")),
-                        labels = rev(c("UVB - Ctrl",
-                                       "SFN - UVB")))
-
-lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
-ll$reg <- factor(ll$reg,
-                 levels = lvls$reg[order(lvls$`Methyl Diff`)])
-ll
-
-p1 <- ggplot(data = ll) +
-  coord_polar("y",
-              start = 0,
-              direction = -1) +
-  geom_tile(aes(x =  as.numeric(Comparison),
-                y = reg, 
-                fill = `Methyl Diff`),
-            color = "white") +
-  geom_text(data = ll[Comparison == "UVB - Ctrl", ],
-            aes(x = rep(1.75,
-                        nlevels(reg)),
-                y = reg,
-                label = unique(reg),
-                angle = 90 + seq(from = 0,
-                                 to = 360,
-                                 length.out = nlevels(reg))[as.numeric(reg)]),
-            hjust = 0,
-            color = "black") +
-  scale_fill_gradient2(low = "red", 
-                       high = "green", 
-                       mid = "grey", 
-                       midpoint = 0, 
-                       name = "Methyl Diff") +
-  scale_x_continuous(limits = c(0, 
-                                max(as.numeric(ll$Comparison)) + 0.5),
-                     expand = c(0, 0)) + 
-  scale_y_discrete("",
-                   expand = c(0, 0)) +
-  ggtitle("Changes in Controls Over Time") + 
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title.x = element_blank(),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks.y = element_blank())
-
-tiff(filename = "tmp/skin_uvb_heatmap_w15.tiff",
-     height = 10,
-     width = 10,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-print(p1)
-graphics.off()
-
-# DMR Part IV: Week25 Comparisons----
-snames <- c("W25UVB1",
-            "W25UVB2",
-            "W25Ctrl1",
-            "W25Ctrl2",
-            "W25SFN1",
-            "W25SFN2")
-
-# Multi-factor analysis (treatment + time + interaction)----
-dtl <- list(data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X25w_UVB_0.N,
-                       X = dt1$X25w_UVB_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X25w_UVB_1.N,
-                       X = dt1$X25w_UVB_1.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X25w_CON_0.N,
-                       X = dt1$X25w_CON_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X25w_CON_1.N,
-                       X = dt1$X25w_CON_1.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X25w_SFN_0.N,
-                       X = dt1$X25w_SFN_0.X),
-            data.table(dt1[, c("chr", "pos")],
-                       N = dt1$X25w_SFN_1.N,
-                       X = dt1$X25w_SFN_1.X))
-dtl
-
-BSobj <- makeBSseqData(dat = dtl,
-                       sampleNames = snames)
-BSobj
-
-design <- data.table(trt = rep(rep(c("UVB", 
-                                     "Ctrl", 
-                                     "SFN"),
-                                   each = 2),
-                               1))
-design$trt <- factor(design$trt,
-                     levels = unique(design$trt))
-design
-
-DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
-                             design = design,
-                             formula = ~ trt)
-
-# a. Control vs. UVB at Week 25----
-DMLtest.Ctrl.UVB.W25 <- DMLtest.multiFactor(DMLfit,
-                                            coef = "trtCtrl")
-
-DMLtest.Ctrl.UVB.W25$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W25$chr))
-head(pct[, c("X25w_CON_0",
-             "X25w_CON_1",
-             "X25w_UVB_0",
-             "X25w_UVB_1")])
-DMLtest.Ctrl.UVB.W25 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                    pct[, c("X25w_CON_0",
-                                                            "X25w_CON_1",
-                                                            "X25w_UVB_0",
-                                                            "X25w_UVB_1")]),
-                                         DMLtest.Ctrl.UVB.W25,
-                                         by = c("chr",
-                                                "pos")))
-DMLtest.Ctrl.UVB.W25$mu.ctrl25w <- (DMLtest.Ctrl.UVB.W25$X25w_CON_0 + DMLtest.Ctrl.UVB.W25$X25w_CON_1)/2
-DMLtest.Ctrl.UVB.W25$mu.uvb25w <- (DMLtest.Ctrl.UVB.W25$X25w_UVB_0 + DMLtest.Ctrl.UVB.W25$X25w_UVB_1)/2
-
-# Mean vs. difference----
-DMLtest.Ctrl.UVB.W25$mu <- (DMLtest.Ctrl.UVB.W25$mu.ctrl25w + DMLtest.Ctrl.UVB.W25$mu.uvb25w)/2
-DMLtest.Ctrl.UVB.W25$diff <- (DMLtest.Ctrl.UVB.W25$mu.ctrl25w - DMLtest.Ctrl.UVB.W25$mu.uvb25w)
-
-# Green: hypomethylated in UVB; Red: hypermethylated in UVB
-# NOTE: FLIP THE FIGURE!
-dtp1 <- DMLtest.Ctrl.UVB.W25[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w25.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot((-1)*dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylation in UVB vs. Control\nat Week 25, FDR < 0.1")
-points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "red")
-points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "green")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# b. SFN vs. UVB at Week 25----
-DMLtest.SFN.UVB.W25 <- DMLtest.multiFactor(DMLfit,
-                                           coef = "trtSFN")
-head(DMLtest.SFN.UVB.W25)
-DMLtest.SFN.UVB.W25$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W25$chr))
-
-DMLtest.SFN.UVB.W25 <- data.table(merge(data.table(dt1[, gene:CpG],
-                                                   pct[, c("X25w_SFN_0",
-                                                           "X25w_SFN_1",
-                                                           "X25w_UVB_0",
-                                                           "X25w_UVB_1")]),
-                                        DMLtest.SFN.UVB.W25,
-                                        by = c("chr",
-                                               "pos")))
-DMLtest.SFN.UVB.W25$mu.sfn25w <- (DMLtest.SFN.UVB.W25$X25w_SFN_0 + DMLtest.SFN.UVB.W25$X25w_SFN_1)/2
-DMLtest.SFN.UVB.W25$mu.uvb25w <- (DMLtest.SFN.UVB.W25$X25w_UVB_0 + DMLtest.SFN.UVB.W25$X25w_UVB_1)/2
-
-# Mean vs. difference----
-DMLtest.SFN.UVB.W25$mu <- (DMLtest.SFN.UVB.W25$mu.sfn25w + DMLtest.SFN.UVB.W25$mu.uvb25w)/2
-DMLtest.SFN.UVB.W25$diff <- (DMLtest.SFN.UVB.W25$mu.sfn25w - DMLtest.SFN.UVB.W25$mu.uvb25w)
-
-# Green: hypomethylated in UVB; Red: hypermethylated in UVB
-dtp1 <- DMLtest.SFN.UVB.W25[!is.na(stat), ]
-tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w25.tiff",
-     height = 6,
-     width = 6,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-plot(dtp1$diff ~ dtp1$mu,
-     pch = ".",
-     xlab = "Mean",
-     ylab = "Difference",
-     main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 25, FDR < 0.1")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
-       pch = "x",
-       col = "red")
-points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
-       pch = "x",
-       col = "green")
-abline(h = c(-0.2, 0.2),
-       lty = 2)
-graphics.off()
-
-# Heatmaps----
-uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W25[fdrs < 0.1 & diff < 0]$pos)
-uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W25[fdrs < 0.1 & dtp1$diff < 0]$pos)
-hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
-l1 <- DMLtest.Ctrl.UVB.W25[pos %in% hyper, c("gene", 
-                                             "pos", 
-                                             "diff")]
-l1$diff <- (-1)*l1$diff
-l2 <- DMLtest.SFN.UVB.W25[pos %in% hyper, c("gene", 
-                                            "pos", 
-                                            "diff")]
-# Venn diagram----
-length(uvb.hyper.1)
-length(uvb.hyper.2)
-length(hyper)
-
-uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W25[fdrs < 0.1 & diff > 0]$pos)
-uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W25[fdrs < 0.1 & dtp1$diff > 0]$pos)
-hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
-l3 <- DMLtest.Ctrl.UVB.W25[pos %in% hypo, c("gene", 
-                                            "pos", 
-                                            "diff")]
-l3$diff <- (-1)*l3$diff
-l4 <- DMLtest.SFN.UVB.W25[pos %in% hypo, c("gene", 
-                                           "pos", 
-                                           "diff")]
-# Venn diagram----
-length(uvb.hypo.1)
-length(uvb.hypo.2)
-length(hypo)
-
-ll <- merge(l1,
-            l2,
-            by = c("gene", 
-                   "pos"))
-ll2 <- merge(l3,
-             l4,
-             by = c("gene", 
-                    "pos"))
-ll <- rbind.data.frame(ll,
-                       ll2)
-
-ll$reg <- paste(ll$gene,
-                ll$pos,
-                sep = "_")
-write.csv(ll,
-          file = "tmp/w25.csv")
-
-ll <- melt.data.table(data = ll,
-                      id.vars = c(1, 5),
-                      measure.vars = 3:4,
-                      variable.name = "Comparison",
-                      value.name = "Methyl Diff")
-ll$reg <- factor(ll$reg)
-ll$Comparison <- factor(ll$Comparison,
-                        levels = rev(c("diff.x",
-                                       "diff.y")),
-                        labels = rev(c("UVB - Ctrl",
-                                       "SFN - UVB")))
-
-lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
-ll$reg <- factor(ll$reg,
-                 levels = lvls$reg[order(lvls$`Methyl Diff`)])
-ll
-
-p1 <- ggplot(data = ll) +
-  coord_polar("y",
-              start = 0,
-              direction = -1) +
-  geom_tile(aes(x =  as.numeric(Comparison),
-                y = reg, 
-                fill = `Methyl Diff`),
-            color = "white") +
-  geom_text(data = ll[Comparison == "UVB - Ctrl", ],
-            aes(x = rep(1.75,
-                        nlevels(reg)),
-                y = reg,
-                label = unique(reg),
-                angle = 90 + seq(from = 0,
-                                 to = 360,
-                                 length.out = nlevels(reg))[as.numeric(reg)]),
-            hjust = 0,
-            color = "black") +
-  scale_fill_gradient2(low = "red", 
-                       high = "green", 
-                       mid = "grey", 
-                       midpoint = 0, 
-                       name = "Methyl Diff") +
-  scale_x_continuous(limits = c(0, 
-                                max(as.numeric(ll$Comparison)) + 0.5),
-                     expand = c(0, 0)) + 
-  scale_y_discrete("",
-                   expand = c(0, 0)) +
-  ggtitle("Changes in Controls Over Time") + 
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title.x = element_blank(),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks.y = element_blank())
-
-tiff(filename = "tmp/skin_uvb_heatmap_w25.tiff",
-     height = 10,
-     width = 10,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-print(p1)
-graphics.off()
-
+# 
+# # # Heatmaps 2----
+# # sign.15.02 <- c(unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff > 0.2]$pos),
+# #                 unique(DMLtest.Ctrl.W15.W2[fdrs < 0.01 & diff < -0.2]$pos))
+# # l1 <- DMLtest.Ctrl.W15.W2[pos %in% sign.15.02,
+# #                           c("gene", 
+# #                             "pos", 
+# #                             "diff")]
+# # names(l1)[3] <- "w15w2"
+# # 
+# # l2 <- DMLtest.Ctrl.W25.W2[pos %in% sign.15.02,
+# #                           c("gene", 
+# #                             "pos", 
+# #                             "diff")]
+# # names(l2)[3] <- "w25w2"
+# # 
+# # l3 <- DMLtest.Ctrl.W25.W15[pos %in% sign.15.02,
+# #                            c("gene", 
+# #                              "pos", 
+# #                              "diff")]
+# # names(l3)[3] <- "w25w15"
+# # 
+# # ll <- merge(l1, l2, by = c("gene", 
+# #                            "pos"))
+# # ll <- merge(ll, l3, by = c("gene", 
+# #                            "pos"))
+# # ll
+# # 
+# # ll <- melt.data.table(data = ll,
+# #                       id.vars = 1:2,
+# #                       measure.vars = 3:5,
+# #                       variable.name = "Comparison",
+# #                       value.name = "Methyl Diff")
+# # ll$reg <- factor(paste(ll$gene, 
+# #                        ll$pos,
+# #                        sep = "_"))
+# # ll$Comparison <- factor(ll$Comparison,
+# #                         levels = unique(ll$Comparison))
+# # 
+# # lvls <- ll[ll$Comparison == "w15w2", ]
+# # ll$reg <- factor(ll$reg,
+# #                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# # ll
+# # 
+# # p1 <- ggplot(data = ll) +
+# #   geom_tile(aes(x =  Comparison,
+# #                 y = reg, 
+# #                 fill = `Methyl Diff`),
+# #             color = "black") +
+# #   scale_fill_gradient2(low = "red", 
+# #                        high = "green", 
+# #                        mid = "black", 
+# #                        midpoint = 0, 
+# #                        # limit = c(-10, 10), 
+# #                        name = "Methyl Diff") +
+# #   scale_x_discrete(expand = c(0, 0)) + 
+# #   scale_y_discrete("Gene Region",
+# #                    expand = c(0, 0)) +
+# #   ggtitle("Changes in Controls Over Time") +
+# #   theme(plot.title = element_text(hjust = 0.5))
+# # p1
+# # 
+# # tiff(filename = "tmp/skin_uvb_heatmap_ctrl.tiff",
+# #      height = 20,
+# #      width = 6,
+# #      units = 'in',
+# #      res = 300,
+# #      compression = "lzw+p")
+# # print(p1)
+# # graphics.off()
+# 
+# # DMR Part II: Week2 Comparisons----
+# snames <- c("W2UVB1",
+#             "W2UVB2",
+#             "W2Ctrl1",
+#             "W2Ctrl2",
+#             "W2SFN1",
+#             "W2SFN2")
+# 
+# # Multi-factor analysis (treatment + time + interaction)----
+# dtl <- list(data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_UVB_0.N,
+#                        X = dt1$X02w_UVB_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_UVB_1.N,
+#                        X = dt1$X02w_UVB_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_CON_0.N,
+#                        X = dt1$X02w_CON_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_CON_1.N,
+#                        X = dt1$X02w_CON_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_SFN_0.N,
+#                        X = dt1$X02w_SFN_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X02w_SFN_1.N,
+#                        X = dt1$X02w_SFN_1.X))
+# dtl
+# 
+# BSobj <- makeBSseqData(dat = dtl,
+#                        sampleNames = snames)
+# BSobj
+# 
+# design <- data.table(trt = rep(rep(c("UVB", 
+#                                      "Ctrl", 
+#                                      "SFN"),
+#                                    each = 2),
+#                                1))
+# design$trt <- factor(design$trt,
+#                      levels = unique(design$trt))
+# design
+# 
+# DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
+#                              design = design,
+#                              formula = ~ trt)
+# 
+# # a. Control vs. UVB at Week 2----
+# DMLtest.Ctrl.UVB.W2 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "trtCtrl")
+# 
+# DMLtest.Ctrl.UVB.W2$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W2$chr))
+# head(pct[, c("X02w_CON_0",
+#              "X02w_CON_1",
+#              "X02w_UVB_0",
+#              "X02w_UVB_1")])
+# DMLtest.Ctrl.UVB.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X02w_CON_0",
+#                                                            "X02w_CON_1",
+#                                                            "X02w_UVB_0",
+#                                                            "X02w_UVB_1")]),
+#                                         DMLtest.Ctrl.UVB.W2,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.Ctrl.UVB.W2$mu.ctrl2w <- (DMLtest.Ctrl.UVB.W2$X02w_CON_0 + DMLtest.Ctrl.UVB.W2$X02w_CON_1)/2
+# DMLtest.Ctrl.UVB.W2$mu.uvb2w <- (DMLtest.Ctrl.UVB.W2$X02w_UVB_0 + DMLtest.Ctrl.UVB.W2$X02w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.UVB.W2$mu <- (DMLtest.Ctrl.UVB.W2$mu.ctrl2w + DMLtest.Ctrl.UVB.W2$mu.uvb2w)/2
+# DMLtest.Ctrl.UVB.W2$diff <- (DMLtest.Ctrl.UVB.W2$mu.ctrl2w - DMLtest.Ctrl.UVB.W2$mu.uvb2w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# # NOTE: FLIP THE FIGURE!
+# dtp1 <- DMLtest.Ctrl.UVB.W2[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w2.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot((-1)*dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in UVB vs. Control\nat Week 2, FDR < 0.1")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # b. SFN vs. UVB at Week 2----
+# DMLtest.SFN.UVB.W2 <- DMLtest.multiFactor(DMLfit,
+#                                           coef = "trtSFN")
+# head(DMLtest.SFN.UVB.W2)
+# DMLtest.SFN.UVB.W2$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W2$chr))
+# 
+# DMLtest.SFN.UVB.W2 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                   pct[, c("X02w_SFN_0",
+#                                                           "X02w_SFN_1",
+#                                                           "X02w_UVB_0",
+#                                                           "X02w_UVB_1")]),
+#                                        DMLtest.SFN.UVB.W2,
+#                                        by = c("chr",
+#                                               "pos")))
+# DMLtest.SFN.UVB.W2$mu.sfn2w <- (DMLtest.SFN.UVB.W2$X02w_SFN_0 + DMLtest.SFN.UVB.W2$X02w_SFN_1)/2
+# DMLtest.SFN.UVB.W2$mu.uvb2w <- (DMLtest.SFN.UVB.W2$X02w_UVB_0 + DMLtest.SFN.UVB.W2$X02w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.SFN.UVB.W2$mu <- (DMLtest.SFN.UVB.W2$mu.sfn2w + DMLtest.SFN.UVB.W2$mu.uvb2w)/2
+# DMLtest.SFN.UVB.W2$diff <- (DMLtest.SFN.UVB.W2$mu.sfn2w - DMLtest.SFN.UVB.W2$mu.uvb2w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# dtp1 <- DMLtest.SFN.UVB.W2[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w2.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 2, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # Heatmaps----
+# uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W2[fdrs < 0.1 & diff < 0]$pos)
+# uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W2[fdrs < 0.1 & dtp1$diff < 0]$pos)
+# hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
+# l1 <- DMLtest.Ctrl.UVB.W2[pos %in% hyper, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# l1$diff <- (-1)*l1$diff
+# l2 <- DMLtest.SFN.UVB.W2[pos %in% hyper, c("gene", 
+#                                            "pos", 
+#                                            "diff")]
+# # Venn diagram----
+# length(uvb.hyper.1)
+# length(uvb.hyper.2)
+# length(hyper)
+# 
+# uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W2[fdrs < 0.1 & diff > 0]$pos)
+# uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W2[fdrs < 0.1 & dtp1$diff > 0]$pos)
+# hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
+# l3 <- DMLtest.Ctrl.UVB.W2[pos %in% hypo, c("gene", 
+#                                            "pos", 
+#                                            "diff")]
+# l3$diff <- (-1)*l3$diff
+# l4 <- DMLtest.SFN.UVB.W2[pos %in% hypo, c("gene", 
+#                                           "pos", 
+#                                           "diff")]
+# # Venn diagram----
+# length(uvb.hypo.1)
+# length(uvb.hypo.2)
+# length(hypo)
+# 
+# ll <- merge(l1,
+#             l2,
+#             by = c("gene", 
+#                    "pos"))
+# ll2 <- merge(l3,
+#              l4,
+#              by = c("gene", 
+#                     "pos"))
+# ll <- rbind.data.frame(ll,
+#                        ll2)
+# 
+# ll$reg <- paste(ll$gene,
+#                 ll$pos,
+#                 sep = "_")
+# write.csv(ll,
+#           file = "tmp/w2.csv")
+# 
+# ll <- melt.data.table(data = ll,
+#                       id.vars = c(1, 5),
+#                       measure.vars = 3:4,
+#                       variable.name = "Comparison",
+#                       value.name = "Methyl Diff")
+# ll$reg <- factor(ll$reg)
+# ll$Comparison <- factor(ll$Comparison,
+#                         levels = rev(c("diff.x",
+#                                        "diff.y")),
+#                         labels = rev(c("UVB - Ctrl",
+#                                        "SFN - UVB")))
+# 
+# lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
+# ll$reg <- factor(ll$reg,
+#                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# ll
+# 
+# p1 <- ggplot(data = ll) +
+#   coord_polar("y",
+#               start = 0,
+#               direction = -1) +
+#   geom_tile(aes(x =  as.numeric(Comparison),
+#                 y = reg, 
+#                 fill = `Methyl Diff`),
+#             color = "white") +
+#   geom_text(data = ll[Comparison == "UVB - Ctrl", ],
+#             aes(x = rep(1.75,
+#                         nlevels(reg)),
+#                 y = reg,
+#                 label = unique(reg),
+#                 angle = 90 + seq(from = 0,
+#                                  to = 360,
+#                                  length.out = nlevels(reg))[as.numeric(reg)]),
+#             hjust = 0,
+#             color = "black") +
+#   scale_fill_gradient2(low = "red", 
+#                        high = "green", 
+#                        mid = "grey", 
+#                        midpoint = 0, 
+#                        name = "Methyl Diff") +
+#   scale_x_continuous(limits = c(0, 
+#                                 max(as.numeric(ll$Comparison)) + 0.5),
+#                      expand = c(0, 0)) + 
+#   scale_y_discrete("",
+#                    expand = c(0, 0)) +
+#   ggtitle("Changes in Controls Over Time") + 
+#   theme(plot.title = element_text(hjust = 0.5),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank())
+# 
+# tiff(filename = "tmp/skin_uvb_heatmap_w2.tiff",
+#      height = 10,
+#      width = 10,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# print(p1)
+# graphics.off()
+# 
+# # DMR Part III: Week15 Comparisons----
+# snames <- c("W15UVB1",
+#             "W15UVB2",
+#             "W15Ctrl1",
+#             "W15Ctrl2",
+#             "W15SFN1",
+#             "W15SFN2")
+# 
+# # Multi-factor analysis (treatment + time + interaction)----
+# dtl <- list(data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_UVB_0.N,
+#                        X = dt1$X15w_UVB_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_UVB_1.N,
+#                        X = dt1$X15w_UVB_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_CON_0.N,
+#                        X = dt1$X15w_CON_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_CON_1.N,
+#                        X = dt1$X15w_CON_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_SFN_0.N,
+#                        X = dt1$X15w_SFN_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X15w_SFN_1.N,
+#                        X = dt1$X15w_SFN_1.X))
+# dtl
+# 
+# BSobj <- makeBSseqData(dat = dtl,
+#                        sampleNames = snames)
+# BSobj
+# 
+# design <- data.table(trt = rep(rep(c("UVB", 
+#                                      "Ctrl", 
+#                                      "SFN"),
+#                                    each = 2),
+#                                1))
+# design$trt <- factor(design$trt,
+#                      levels = unique(design$trt))
+# design
+# 
+# DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
+#                              design = design,
+#                              formula = ~ trt)
+# 
+# # a. Control vs. UVB at Week 15----
+# DMLtest.Ctrl.UVB.W15 <- DMLtest.multiFactor(DMLfit,
+#                                             coef = "trtCtrl")
+# 
+# DMLtest.Ctrl.UVB.W15$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W15$chr))
+# head(pct[, c("X15w_CON_0",
+#              "X15w_CON_1",
+#              "X15w_UVB_0",
+#              "X15w_UVB_1")])
+# DMLtest.Ctrl.UVB.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                     pct[, c("X15w_CON_0",
+#                                                             "X15w_CON_1",
+#                                                             "X15w_UVB_0",
+#                                                             "X15w_UVB_1")]),
+#                                          DMLtest.Ctrl.UVB.W15,
+#                                          by = c("chr",
+#                                                 "pos")))
+# DMLtest.Ctrl.UVB.W15$mu.ctrl15w <- (DMLtest.Ctrl.UVB.W15$X15w_CON_0 + DMLtest.Ctrl.UVB.W15$X15w_CON_1)/2
+# DMLtest.Ctrl.UVB.W15$mu.uvb15w <- (DMLtest.Ctrl.UVB.W15$X15w_UVB_0 + DMLtest.Ctrl.UVB.W15$X15w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.UVB.W15$mu <- (DMLtest.Ctrl.UVB.W15$mu.ctrl15w + DMLtest.Ctrl.UVB.W15$mu.uvb15w)/2
+# DMLtest.Ctrl.UVB.W15$diff <- (DMLtest.Ctrl.UVB.W15$mu.ctrl15w - DMLtest.Ctrl.UVB.W15$mu.uvb15w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# # NOTE: FLIP THE FIGURE!
+# dtp1 <- DMLtest.Ctrl.UVB.W15[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w15.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot((-1)*dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in UVB vs. Control\nat Week 15, FDR < 0.1")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # b. SFN vs. UVB at Week 15----
+# DMLtest.SFN.UVB.W15 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "trtSFN")
+# head(DMLtest.SFN.UVB.W15)
+# DMLtest.SFN.UVB.W15$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W15$chr))
+# 
+# DMLtest.SFN.UVB.W15 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X15w_SFN_0",
+#                                                            "X15w_SFN_1",
+#                                                            "X15w_UVB_0",
+#                                                            "X15w_UVB_1")]),
+#                                         DMLtest.SFN.UVB.W15,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.SFN.UVB.W15$mu.sfn15w <- (DMLtest.SFN.UVB.W15$X15w_SFN_0 + DMLtest.SFN.UVB.W15$X15w_SFN_1)/2
+# DMLtest.SFN.UVB.W15$mu.uvb15w <- (DMLtest.SFN.UVB.W15$X15w_UVB_0 + DMLtest.SFN.UVB.W15$X15w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.SFN.UVB.W15$mu <- (DMLtest.SFN.UVB.W15$mu.sfn15w + DMLtest.SFN.UVB.W15$mu.uvb15w)/2
+# DMLtest.SFN.UVB.W15$diff <- (DMLtest.SFN.UVB.W15$mu.sfn15w - DMLtest.SFN.UVB.W15$mu.uvb15w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# dtp1 <- DMLtest.SFN.UVB.W15[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w15.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 15, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # Heatmaps----
+# uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W15[fdrs < 0.1 & diff < 0]$pos)
+# uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W15[fdrs < 0.1 & dtp1$diff < 0]$pos)
+# hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
+# l1 <- DMLtest.Ctrl.UVB.W15[pos %in% hyper, c("gene", 
+#                                              "pos", 
+#                                              "diff")]
+# l1$diff <- (-1)*l1$diff
+# l2 <- DMLtest.SFN.UVB.W15[pos %in% hyper, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# # Venn diagram----
+# length(uvb.hyper.1)
+# length(uvb.hyper.2)
+# length(hyper)
+# 
+# uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W15[fdrs < 0.1 & diff > 0]$pos)
+# uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W15[fdrs < 0.1 & dtp1$diff > 0]$pos)
+# hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
+# l3 <- DMLtest.Ctrl.UVB.W15[pos %in% hypo, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# l3$diff <- (-1)*l3$diff
+# l4 <- DMLtest.SFN.UVB.W15[pos %in% hypo, c("gene", 
+#                                            "pos", 
+#                                            "diff")]
+# # Venn diagram----
+# length(uvb.hypo.1)
+# length(uvb.hypo.2)
+# length(hypo)
+# 
+# ll <- merge(l1,
+#             l2,
+#             by = c("gene", 
+#                    "pos"))
+# ll2 <- merge(l3,
+#              l4,
+#              by = c("gene", 
+#                     "pos"))
+# ll <- rbind.data.frame(ll,
+#                        ll2)
+# 
+# ll$reg <- paste(ll$gene,
+#                 ll$pos,
+#                 sep = "_")
+# write.csv(ll,
+#           file = "tmp/w15.csv")
+# 
+# ll <- melt.data.table(data = ll,
+#                       id.vars = c(1, 5),
+#                       measure.vars = 3:4,
+#                       variable.name = "Comparison",
+#                       value.name = "Methyl Diff")
+# ll$reg <- factor(ll$reg)
+# ll$Comparison <- factor(ll$Comparison,
+#                         levels = rev(c("diff.x",
+#                                        "diff.y")),
+#                         labels = rev(c("UVB - Ctrl",
+#                                        "SFN - UVB")))
+# 
+# lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
+# ll$reg <- factor(ll$reg,
+#                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# ll
+# 
+# p1 <- ggplot(data = ll) +
+#   coord_polar("y",
+#               start = 0,
+#               direction = -1) +
+#   geom_tile(aes(x =  as.numeric(Comparison),
+#                 y = reg, 
+#                 fill = `Methyl Diff`),
+#             color = "white") +
+#   geom_text(data = ll[Comparison == "UVB - Ctrl", ],
+#             aes(x = rep(1.75,
+#                         nlevels(reg)),
+#                 y = reg,
+#                 label = unique(reg),
+#                 angle = 90 + seq(from = 0,
+#                                  to = 360,
+#                                  length.out = nlevels(reg))[as.numeric(reg)]),
+#             hjust = 0,
+#             color = "black") +
+#   scale_fill_gradient2(low = "red", 
+#                        high = "green", 
+#                        mid = "grey", 
+#                        midpoint = 0, 
+#                        name = "Methyl Diff") +
+#   scale_x_continuous(limits = c(0, 
+#                                 max(as.numeric(ll$Comparison)) + 0.5),
+#                      expand = c(0, 0)) + 
+#   scale_y_discrete("",
+#                    expand = c(0, 0)) +
+#   ggtitle("Changes in Controls Over Time") + 
+#   theme(plot.title = element_text(hjust = 0.5),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank())
+# 
+# tiff(filename = "tmp/skin_uvb_heatmap_w15.tiff",
+#      height = 10,
+#      width = 10,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# print(p1)
+# graphics.off()
+# 
+# # DMR Part IV: Week25 Comparisons----
+# snames <- c("W25UVB1",
+#             "W25UVB2",
+#             "W25Ctrl1",
+#             "W25Ctrl2",
+#             "W25SFN1",
+#             "W25SFN2")
+# 
+# # Multi-factor analysis (treatment + time + interaction)----
+# dtl <- list(data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_UVB_0.N,
+#                        X = dt1$X25w_UVB_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_UVB_1.N,
+#                        X = dt1$X25w_UVB_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_CON_0.N,
+#                        X = dt1$X25w_CON_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_CON_1.N,
+#                        X = dt1$X25w_CON_1.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_SFN_0.N,
+#                        X = dt1$X25w_SFN_0.X),
+#             data.table(dt1[, c("chr", "pos")],
+#                        N = dt1$X25w_SFN_1.N,
+#                        X = dt1$X25w_SFN_1.X))
+# dtl
+# 
+# BSobj <- makeBSseqData(dat = dtl,
+#                        sampleNames = snames)
+# BSobj
+# 
+# design <- data.table(trt = rep(rep(c("UVB", 
+#                                      "Ctrl", 
+#                                      "SFN"),
+#                                    each = 2),
+#                                1))
+# design$trt <- factor(design$trt,
+#                      levels = unique(design$trt))
+# design
+# 
+# DMLfit <- DMLfit.multiFactor(BSobj = BSobj, 
+#                              design = design,
+#                              formula = ~ trt)
+# 
+# # a. Control vs. UVB at Week 25----
+# DMLtest.Ctrl.UVB.W25 <- DMLtest.multiFactor(DMLfit,
+#                                             coef = "trtCtrl")
+# 
+# DMLtest.Ctrl.UVB.W25$chr <- as.numeric(as.character(DMLtest.Ctrl.UVB.W25$chr))
+# head(pct[, c("X25w_CON_0",
+#              "X25w_CON_1",
+#              "X25w_UVB_0",
+#              "X25w_UVB_1")])
+# DMLtest.Ctrl.UVB.W25 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                     pct[, c("X25w_CON_0",
+#                                                             "X25w_CON_1",
+#                                                             "X25w_UVB_0",
+#                                                             "X25w_UVB_1")]),
+#                                          DMLtest.Ctrl.UVB.W25,
+#                                          by = c("chr",
+#                                                 "pos")))
+# DMLtest.Ctrl.UVB.W25$mu.ctrl25w <- (DMLtest.Ctrl.UVB.W25$X25w_CON_0 + DMLtest.Ctrl.UVB.W25$X25w_CON_1)/2
+# DMLtest.Ctrl.UVB.W25$mu.uvb25w <- (DMLtest.Ctrl.UVB.W25$X25w_UVB_0 + DMLtest.Ctrl.UVB.W25$X25w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.Ctrl.UVB.W25$mu <- (DMLtest.Ctrl.UVB.W25$mu.ctrl25w + DMLtest.Ctrl.UVB.W25$mu.uvb25w)/2
+# DMLtest.Ctrl.UVB.W25$diff <- (DMLtest.Ctrl.UVB.W25$mu.ctrl25w - DMLtest.Ctrl.UVB.W25$mu.uvb25w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# # NOTE: FLIP THE FIGURE!
+# dtp1 <- DMLtest.Ctrl.UVB.W25[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_uvb-ctrl_w25.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot((-1)*dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in UVB vs. Control\nat Week 25, FDR < 0.1")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points((-1)*dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # b. SFN vs. UVB at Week 25----
+# DMLtest.SFN.UVB.W25 <- DMLtest.multiFactor(DMLfit,
+#                                            coef = "trtSFN")
+# head(DMLtest.SFN.UVB.W25)
+# DMLtest.SFN.UVB.W25$chr <- as.numeric(as.character(DMLtest.SFN.UVB.W25$chr))
+# 
+# DMLtest.SFN.UVB.W25 <- data.table(merge(data.table(dt1[, gene:CpG],
+#                                                    pct[, c("X25w_SFN_0",
+#                                                            "X25w_SFN_1",
+#                                                            "X25w_UVB_0",
+#                                                            "X25w_UVB_1")]),
+#                                         DMLtest.SFN.UVB.W25,
+#                                         by = c("chr",
+#                                                "pos")))
+# DMLtest.SFN.UVB.W25$mu.sfn25w <- (DMLtest.SFN.UVB.W25$X25w_SFN_0 + DMLtest.SFN.UVB.W25$X25w_SFN_1)/2
+# DMLtest.SFN.UVB.W25$mu.uvb25w <- (DMLtest.SFN.UVB.W25$X25w_UVB_0 + DMLtest.SFN.UVB.W25$X25w_UVB_1)/2
+# 
+# # Mean vs. difference----
+# DMLtest.SFN.UVB.W25$mu <- (DMLtest.SFN.UVB.W25$mu.sfn25w + DMLtest.SFN.UVB.W25$mu.uvb25w)/2
+# DMLtest.SFN.UVB.W25$diff <- (DMLtest.SFN.UVB.W25$mu.sfn25w - DMLtest.SFN.UVB.W25$mu.uvb25w)
+# 
+# # Green: hypomethylated in UVB; Red: hypermethylated in UVB
+# dtp1 <- DMLtest.SFN.UVB.W25[!is.na(stat), ]
+# tiff(filename = "tmp/skin_uvb_maplot_sfn_uvb_w25.tiff",
+#      height = 6,
+#      width = 6,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# plot(dtp1$diff ~ dtp1$mu,
+#      pch = ".",
+#      xlab = "Mean",
+#      ylab = "Difference",
+#      main = "Proportion of Methylation in SFN vs. UVB\nat Weeks 25, FDR < 0.1")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff > 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff > 0] ,
+#        pch = "x",
+#        col = "red")
+# points(dtp1$diff[dtp1$fdrs < 0.1 & dtp1$diff < 0] ~ dtp1$mu[dtp1$fdrs < 0.1 & dtp1$diff < 0] ,
+#        pch = "x",
+#        col = "green")
+# abline(h = c(-0.2, 0.2),
+#        lty = 2)
+# graphics.off()
+# 
+# # Heatmaps----
+# uvb.hyper.1 <- unique(DMLtest.Ctrl.UVB.W25[fdrs < 0.1 & diff < 0]$pos)
+# uvb.hyper.2 <- unique(DMLtest.SFN.UVB.W25[fdrs < 0.1 & dtp1$diff < 0]$pos)
+# hyper <- uvb.hyper.1[uvb.hyper.1 %in% uvb.hyper.2]
+# l1 <- DMLtest.Ctrl.UVB.W25[pos %in% hyper, c("gene", 
+#                                              "pos", 
+#                                              "diff")]
+# l1$diff <- (-1)*l1$diff
+# l2 <- DMLtest.SFN.UVB.W25[pos %in% hyper, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# # Venn diagram----
+# length(uvb.hyper.1)
+# length(uvb.hyper.2)
+# length(hyper)
+# 
+# uvb.hypo.1 <- unique(DMLtest.Ctrl.UVB.W25[fdrs < 0.1 & diff > 0]$pos)
+# uvb.hypo.2 <- unique(DMLtest.SFN.UVB.W25[fdrs < 0.1 & dtp1$diff > 0]$pos)
+# hypo <- uvb.hypo.1[uvb.hypo.1 %in% uvb.hypo.2]
+# l3 <- DMLtest.Ctrl.UVB.W25[pos %in% hypo, c("gene", 
+#                                             "pos", 
+#                                             "diff")]
+# l3$diff <- (-1)*l3$diff
+# l4 <- DMLtest.SFN.UVB.W25[pos %in% hypo, c("gene", 
+#                                            "pos", 
+#                                            "diff")]
+# # Venn diagram----
+# length(uvb.hypo.1)
+# length(uvb.hypo.2)
+# length(hypo)
+# 
+# ll <- merge(l1,
+#             l2,
+#             by = c("gene", 
+#                    "pos"))
+# ll2 <- merge(l3,
+#              l4,
+#              by = c("gene", 
+#                     "pos"))
+# ll <- rbind.data.frame(ll,
+#                        ll2)
+# 
+# ll$reg <- paste(ll$gene,
+#                 ll$pos,
+#                 sep = "_")
+# write.csv(ll,
+#           file = "tmp/w25.csv")
+# 
+# ll <- melt.data.table(data = ll,
+#                       id.vars = c(1, 5),
+#                       measure.vars = 3:4,
+#                       variable.name = "Comparison",
+#                       value.name = "Methyl Diff")
+# ll$reg <- factor(ll$reg)
+# ll$Comparison <- factor(ll$Comparison,
+#                         levels = rev(c("diff.x",
+#                                        "diff.y")),
+#                         labels = rev(c("UVB - Ctrl",
+#                                        "SFN - UVB")))
+# 
+# lvls <- ll[ll$Comparison == "UVB - Ctrl", ]
+# ll$reg <- factor(ll$reg,
+#                  levels = lvls$reg[order(lvls$`Methyl Diff`)])
+# ll
+# 
+# p1 <- ggplot(data = ll) +
+#   coord_polar("y",
+#               start = 0,
+#               direction = -1) +
+#   geom_tile(aes(x =  as.numeric(Comparison),
+#                 y = reg, 
+#                 fill = `Methyl Diff`),
+#             color = "white") +
+#   geom_text(data = ll[Comparison == "UVB - Ctrl", ],
+#             aes(x = rep(1.75,
+#                         nlevels(reg)),
+#                 y = reg,
+#                 label = unique(reg),
+#                 angle = 90 + seq(from = 0,
+#                                  to = 360,
+#                                  length.out = nlevels(reg))[as.numeric(reg)]),
+#             hjust = 0,
+#             color = "black") +
+#   scale_fill_gradient2(low = "red", 
+#                        high = "green", 
+#                        mid = "grey", 
+#                        midpoint = 0, 
+#                        name = "Methyl Diff") +
+#   scale_x_continuous(limits = c(0, 
+#                                 max(as.numeric(ll$Comparison)) + 0.5),
+#                      expand = c(0, 0)) + 
+#   scale_y_discrete("",
+#                    expand = c(0, 0)) +
+#   ggtitle("Changes in Controls Over Time") + 
+#   theme(plot.title = element_text(hjust = 0.5),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank())
+# 
+# tiff(filename = "tmp/skin_uvb_heatmap_w25.tiff",
+#      height = 10,
+#      width = 10,
+#      units = 'in',
+#      res = 300,
+#      compression = "lzw+p")
+# print(p1)
+# graphics.off()
+#
 # sessionInfo()
 # sink()
