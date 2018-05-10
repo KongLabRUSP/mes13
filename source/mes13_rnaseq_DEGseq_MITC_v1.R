@@ -1,6 +1,6 @@
 # |----------------------------------------------------------------------------------|
 # | Project: Study of Diabetes in MES13 cells                                        |
-# | Script: RNA-seq data analysis and visualization using edgeR, TIIA only (Wenji)   |
+# | Script: RNA-seq data analysis and visualization using edgeR, MITC only (David)   |
 # | Author: Davit Sargsyan                                                           |
 # | Created: 01/29/2018                                                              |
 # | Modified:                                                                        |
@@ -66,7 +66,7 @@ dt1
 
 # Leave the 3 treatments only----
 dt1 <- subset(dt1,
-              select = c(1:3, 5))
+              select = 1:4)
 dt1
 
 # DEGseq----
@@ -123,7 +123,7 @@ abline(h = c(-0.3, 0.3),
        lty = 2)
 graphics.off()
 
-# b. (TIIA - HG)----
+# b. (MITC - HG)----
 DEGexp(geneExpMatrix1 = dt1,
        geneCol1 = 1, 
        expCol1 = 4, 
@@ -142,34 +142,34 @@ DEGexp(geneExpMatrix1 = dt1,
        method = "MARS",
        outputDir = "tmp")
 
-tiia_hg <- fread("tmp/output_score.txt")
-tiia_hg
-tiia_hg[tiia_hg$`Signature(q-value(Storey et al. 2003) < 0.1)`, ]
+mitc_hg <- fread("tmp/output_score.txt")
+mitc_hg
+mitc_hg[mitc_hg$`Signature(q-value(Storey et al. 2003) < 0.1)`, ]
 
 # Write as CSV----
-write.csv(tiia_hg,
-          file = "tmp/mes13_rnaseq_DEGseq_TIIA-HG.csv",
+write.csv(mitc_hg,
+          file = "tmp/mes13_rnaseq_DEGseq_MITC-HG.csv",
           row.names = FALSE)
 
 # MA Plot----
-tiia_hg[, mu := (log2(value1) + log2(value2))/2]
-tiia_hg[, diff := log2(value1) - log2(value2)]
+mitc_hg[, mu := (log2(value1) + log2(value2))/2]
+mitc_hg[, diff := log2(value1) - log2(value2)]
 
-tiff(filename = "tmp/mes13_rnaseq_DEGseq_TIIA-HG_maplot.tiff",
+tiff(filename = "tmp/mes13_rnaseq_DEGseq_MITC-HG_maplot.tiff",
      height = 6,
      width = 6,
      units = 'in',
      res = 300,
      compression = "lzw+p")
-plot(tiia_hg$diff ~ tiia_hg$mu,
+plot(mitc_hg$diff ~ mitc_hg$mu,
      pch = ".",
      xlab = "Mean",
      ylab = "Difference",
-     main = "MES13 Gene Expression, TIIA-HG, FDR < 0.5")
-points(tiia_hg$diff[tiia_hg$`q-value(Storey et al. 2003)` < 0.5 & tiia_hg$diff > 0] ~ tiia_hg$mu[tiia_hg$`q-value(Storey et al. 2003)` < 0.5 & tiia_hg$diff > 0] ,
+     main = "MES13 Gene Expression, MITC-HG, FDR < 0.5")
+points(mitc_hg$diff[mitc_hg$`q-value(Storey et al. 2003)` < 0.5 & mitc_hg$diff > 0] ~ mitc_hg$mu[mitc_hg$`q-value(Storey et al. 2003)` < 0.5 & mitc_hg$diff > 0] ,
        pch = "x",
        col = "green")
-points(tiia_hg$diff[tiia_hg$`q-value(Storey et al. 2003)` < 0.5 & tiia_hg$diff < 0] ~ tiia_hg$mu[tiia_hg$`q-value(Storey et al. 2003)` < 0.5 & tiia_hg$diff < 0] ,
+points(mitc_hg$diff[mitc_hg$`q-value(Storey et al. 2003)` < 0.5 & mitc_hg$diff < 0] ~ mitc_hg$mu[mitc_hg$`q-value(Storey et al. 2003)` < 0.5 & mitc_hg$diff < 0] ,
        pch = "x",
        col = "red")
 abline(h = c(-0.3, 0.3),
@@ -184,17 +184,17 @@ g2 <- hg_lg[`q-value(Storey et al. 2003)` < 0.5 &
               `log2(Fold_change) normalized` < -0.3,]$GeneNames
 # 207 genes
 
-g3 <- tiia_hg[`q-value(Storey et al. 2003)` < 0.5 & 
+g3 <- mitc_hg[`q-value(Storey et al. 2003)` < 0.5 & 
                 `log2(Fold_change) normalized` > 0.3,]$GeneNames
-# 1,120 genes
-g4 <- tiia_hg[`q-value(Storey et al. 2003)` < 0.5 & 
+# 763 genes
+g4 <- mitc_hg[`q-value(Storey et al. 2003)` < 0.5 & 
                 `log2(Fold_change) normalized` < -0.3,]$GeneNames
-# 1,393 genes
+# 556 genes
 
 up.dn <- g1[g1 %in% g4]
-# 124 genes
+# 56 genes
 dn.up <- g2[g2 %in% g3]
-# 89 genes
+# 46 genes
 
 # Heatmap----
 ll <- unique(c(up.dn,
@@ -203,18 +203,18 @@ ll <- unique(c(up.dn,
 t1 <- merge(hg_lg[hg_lg$GeneNames %in% ll, 
                   c("GeneNames",
                     "log2(Fold_change) normalized")],
-            tiia_hg[tiia_hg$GeneNames %in% ll, 
+            mitc_hg[mitc_hg$GeneNames %in% ll, 
                     c("GeneNames",
                       "log2(Fold_change) normalized")],
             by = "GeneNames")
 colnames(t1) <- c("Gene",
                   "HG-LG",
-                  "TIIA-HG")
+                  "MITC-HG")
 t1 <- t1[order(t1$`HG-LG`,
                decreasing = TRUE), ]
 t1
 write.csv(t1,
-          file = "tmp/mes13_tiia_genes_q-0.5_log2-0.3.csv",
+          file = "tmp/mes13_mitc_genes_q-0.5_log2-0.3.csv",
           row.names = FALSE)
 
 ll <- melt.data.table(data = t1,
@@ -223,13 +223,13 @@ ll <- melt.data.table(data = t1,
                       variable.name = "Comparison",
                       value.name = "Gene Expression Diff")
 ll$Comparison <- factor(ll$Comparison,
-                        levels = c("TIIA-HG", 
+                        levels = c("MITC-HG", 
                                    "HG-LG"))
 lvls <- ll[ll$Comparison == "HG-LG", ]
 ll$Gene <- factor(ll$Gene,
                   levels = lvls$Gene[order(lvls$`Gene Expression Diff`)])
-# Keep top 100 genes for the plot----
-gene.keep <- unique(ll$Gene[order(abs(ll$`Gene Expression Diff`)) < 101])
+# Keep all 102 genes for the plot----
+gene.keep <- unique(ll$Gene[order(abs(ll$`Gene Expression Diff`))])
 ll <- droplevels(subset(ll,
                         Gene %in% gene.keep))
 ll
@@ -272,7 +272,7 @@ p1 <- ggplot(data = ll) +
         axis.ticks.y = element_blank())
 p1
 
-tiff(filename = "tmp/mes13_rnaseq_DEGseq_heatmap.tiff",
+tiff(filename = "tmp/mes13_rnaseq_DEGseq_MITC_heatmap.tiff",
      height = 10,
      width = 10,
      units = 'in',
