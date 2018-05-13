@@ -1,14 +1,13 @@
-# |----------------------------------------------------------------------------------|
-# | Project: Study of Diabetes in MES13 cells                                        |
-# | Script: RNA-seq data analysis and visualization using edgeR, MITC only (David)   |
-# | Author: Davit Sargsyan                                                           |
-# | Created: 01/29/2018                                                              |
-# | Modified:                                                                        |
-# |----------------------------------------------------------------------------------|
-# sink(file = "tmp/log_mes13_rnaseq_DEGseq_v1.R")
-# Source: 
-# https://bioconductor.org/packages/release/bioc/html/DEGseq.html
+# |-----------------------------------------------------------------------------------|
+# | Project:  Study of Diabetes in MES13 cells                                        |
+# | Script:   RNA-seq data analysis and visualization using edgeR, MITC only (David)  |
+# | Author:   Davit Sargsyan                                                          |
+# | Created:  01/29/2018                                                              |
+# | Modified: 05/12/2018(DS): 
+# |-----------------------------------------------------------------------------------|
+# sink(file = "tmp/log_mes13_rnaseq_DEGseq_MITC_v1.R")
 
+# https://bioconductor.org/packages/release/bioc/html/DEGseq.html
 # source("https://bioconductor.org/biocLite.R")
 # biocLite("DEGseq")
 
@@ -18,7 +17,6 @@ require(ggplot2)
 require(DEGseq)
 require(knitr)
 
-# MES13 data----
 # Treatment legend----
 trt.names <- c("LG",
                "HG",
@@ -31,7 +29,7 @@ trt.names <- c("LG",
 # Load data----
 # Question to Renyi: how was the data processed and annotated?
 # dt1 <- fread("data/Renyi_RNAseq_12292017/mes13_fpkm_Dec2017_david.csv")
-dt1 <- fread("data/rna_seq/Renyi_12292017/mes13_featurecounts_Dec2017_david.csv",
+dt1 <- fread("data/Renyi_RNAseq_12292017/mes13_featurecounts_Dec2017_david.csv",
              skip = 1)
 dt1
 
@@ -95,7 +93,7 @@ hg_lg[hg_lg$`Signature(q-value(Storey et al. 2003) < 0.1)`,]
 
 # Write as CSV----
 write.csv(hg_lg,
-          file = "tmp/mes13_rnaseq_DEGseq_HG-LG.csv",
+          file = "tmp/MES13_MITC_RNAseq_DEGseq_HG-LG.csv",
           row.names = FALSE)
 
 # MA Plot----
@@ -148,7 +146,7 @@ mitc_hg[mitc_hg$`Signature(q-value(Storey et al. 2003) < 0.1)`, ]
 
 # Write as CSV----
 write.csv(mitc_hg,
-          file = "tmp/mes13_rnaseq_DEGseq_MITC-HG.csv",
+          file = "tmp/MES13_MITC_RNAseq_DEGseq_MITC-HG.csv",
           row.names = FALSE)
 
 # MA Plot----
@@ -196,6 +194,23 @@ up.dn <- g1[g1 %in% g4]
 dn.up <- g2[g2 %in% g3]
 # 46 genes
 
+# Combine and save the lists----
+all.genes <- Reduce(f = function(a, b){
+  merge(a, b, all = TRUE)
+},
+x = list(data.table(gene = g1,
+                    `log2(HG/LG) > 0.3` = g1),
+         data.table(gene = g2,
+                    `log2(HG/LG) < -0.3` = g2),
+         data.table(gene = g3,
+                    `log2(MITC/HG) > 0.3` = g3),
+         data.table(gene = g4,
+                    `log2(MITC/HG) < -0.3` = g4)))
+all.genes
+write.csv(all.genes,
+          file = "tmp/MES13_MITC_all_sign_genes.csv",
+          row.names = FALSE)
+  
 # Heatmap----
 ll <- unique(c(up.dn,
                dn.up))
