@@ -19,7 +19,7 @@
     
 **mes13_rnaseq_DEGseq_TIIA_v2.R**: current (05/12/2018) version of RNA-seq data analysis script for LG, HG and TIIA. Used for Wenji's paper.    
 **mes13_methylseq_DSS_TIIA_v1.R**: current (05/12/2018) version of DNA methyl-seq data analysis script for LG, HG and MITC. Used for wenji's paper. This version DOES NOT actually use package DSS even though it is in the title.
-
+   
 ### Raw Data
 FastQ file legend (both, Methyl-seq and RNA-seq):    
 ~/mes13/docs/legend.xlsx    
