@@ -6,7 +6,7 @@
 # | Created:     05/12/2018                                                          |
 # | Modified:                                                                        |
 # |----------------------------------------------------------------------------------|
-# sink(file = "tmp/log_mes13_methylseq_DSS_MITC_v1.txt")
+sink(file = "tmp/log_mes13_methylseq_DSS_MITC_v2.txt")
 date()
 
 # NOTE: several packages, e.g. Rcpp, MASS, etc., might be deleted manually and reinstalled
@@ -635,5 +635,5 @@ tiff(filename = "tmp/starburst_mitc-hg.tiff",
 print(p2)
 graphics.off()
 
-# sessionInfo()
-# sink()
+sessionInfo()
+sink()
