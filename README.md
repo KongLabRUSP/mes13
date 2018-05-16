@@ -7,7 +7,7 @@
 ---    
 
 ## Table of Contents
-[file legend](#leg)
+[File Legend](#leg)
 [Daily Logs](#logs)  
 [Results](#results)   
 [Files](#files)
