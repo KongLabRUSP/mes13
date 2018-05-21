@@ -1,12 +1,12 @@
 # |----------------------------------------------------------------------------------|
-# | Project: Skin UVB SKH1 mouse model treated with UA/SFN                           |
-# | Script: Methyl-seq data analysis and visualization using DSS                     |
-# | Coordinator: Ran Yin, Renyi Wu                                                   |
-# | Author: Davit Sargsyan                                                           |
-# | Created: 03/17/2018                                                              |
-# | Modified:04/05/2018, DS: changed hitmaps to donut plots; added more comparisons  |
+# | Project:     Study of Diabetes in MES13 cells, LG, HG and MITC                   |
+# | Script:      Methyl-seq data analysis and visualization using DSS                |
+# | Coordinator: Wenji, David, Renyi Wu                                              |
+# | Author:      Davit Sargsyan                                                      |
+# | Created:     05/12/2018                                                          |
+# | Modified:                                                                        |
 # |----------------------------------------------------------------------------------|
-# sink(file = "tmp/log_skin_uvb_dna_v2.txt")
+# sink(file = "tmp/log_mes13_methylseq_DSS_MITC_v1.txt")
 date()
 
 # NOTE: several packages, e.g. Rcpp, MASS, etc., might be deleted manually and reinstalled
@@ -79,17 +79,18 @@ dt1 <- data.table(start = peakAnno1@anno@ranges@start,
 dt1 <- dt1[!is.na(dt1$SYMBOL == "NA"), ]
 # Removed 12 rows
 
-# Subset data: LG, HG and TIIA----
+# Subset data: LG, HG and MITC----
 dt1 <- data.table(gene = dt1$SYMBOL,
                   anno = dt1$annotation,
                   geneId = dt1$geneId,
                   chr = dt1$geneChr,
                   pos = dt1$start,
                   reg = NA,
-                  dt1[, CpG:WJ02.X],
-                  dt1[, WJ04.N:WJ04.X],
+                  dt1[, CpG:WJ03.X],
                   geneName = dt1$GENENAME)
-dt1# # Dispersion Shrinkage for Sequencing data (DSS)----
+dt1
+
+# # Dispersion Shrinkage for Sequencing data (DSS)----
 # # This is based on Wald test for beta-binomial distribution.
 # # Source: https://www.bioconductor.org/packages/release/bioc/vignettes/DSS/inst/doc/DSS.pdf
 # # The DM detection procedure implemented in DSS is based on a rigorous Wald test for betabinomial
@@ -1202,11 +1203,11 @@ kable(data.table(table(substr(dt1$anno, 1, 9))))
   # |:---------|-----:|
   # |3' UTR    |  4396|
   # |5' UTR    |   758|
-  # |Distal In | 61354|
-  # |Downstrea |  2684|
+  # |Distal In | 61324|
+  # |Downstrea |  2683|
   # |Exon (uc0 | 11546|
-  # |Intron (u | 54271|
-  # |Promoter  | 82146|
+  # |Intron (u | 54267|
+  # |Promoter  | 82137|
 
 # Separate Promoter, Body and Downstream----
 dt1$reg <- as.character(dt1$anno)
@@ -1237,11 +1238,11 @@ dt1$reg <- factor(dt1$reg,
 kable(data.table(table(dt1$reg)))
   # |V1         |     N|
   # |:----------|-----:|
-  # |Promoter   | 82146|
+  # |Promoter   | 82137|
   # |5' UTR     |   758|
-  # |Body       | 65817|
+  # |Body       | 65813|
   # |3' UTR     |  4396|
-  # |Downstream | 64038|
+  # |Downstream | 64007|
 
 # # CHECK: Il23r, Tnfrsf25 and Fcer1g genes diff expressed in RNA
 # tmp <- dt1[dt1$gene %in% c("Il23r",
@@ -1283,7 +1284,7 @@ print(p2)
 graphics.off()
 
 # Percent methylation----
-tmp <- as.matrix(dt1[, WJ01.N:WJ04.X])
+tmp <- as.matrix(dt1[, WJ01.N:WJ03.X])
 head(tmp)
 
 dtN <- tmp[, seq(1,
@@ -1316,7 +1317,7 @@ head(pct)
 dim(pct[rowSums(pct) == 0, ])
 dim(pct[is.na(rowSums(pct)), ])
 dim(pct)
-# 29,563 out of 217,155 rows
+# 29,637 out of 217,111 rows
 
 ndx.keep <- rowSums(pct) != 0 & !is.na(rowSums(pct))
 pct <- pct[ndx.keep, ]
@@ -1324,7 +1325,7 @@ dt1 <- dt1[ndx.keep, ]
 dtN <- dtN[ndx.keep, ]
 dtX <- dtX[ndx.keep, ]
 dim(dtX)
-# 187,592  remaine
+# 187,474  remaine
 
 # Hits per CpG average (i.e. vertical coverage)----
 t1 <- apply(dtN,
@@ -1381,10 +1382,10 @@ mumth
 mumth$trt <- factor(mumth$trt,
                     levels = c("WJ02",
                                "WJ01",
-                               "WJ04"),
+                               "WJ03"),
                     labels = c("HG",
                                "LG",
-                               "TIIA"))
+                               "MITC"))
 
 mumth$`Methylation (%)` <- 100*mumth$mu
 
