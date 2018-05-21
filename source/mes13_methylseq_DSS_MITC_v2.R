@@ -6,7 +6,11 @@
 # | Created:     05/12/2018                                                          |
 # | Modified:                                                                        |
 # |----------------------------------------------------------------------------------|
+<<<<<<< HEAD
 # sink(file = "tmp/log_mes13_methylseq_DSS_MITC_v1.txt")
+=======
+sink(file = "tmp/log_mes13_methylseq_DSS_MITC_v2.txt")
+>>>>>>> a56204d34ed87fc081b092c12e5b937104a86bec
 date()
 
 # NOTE: several packages, e.g. Rcpp, MASS, etc., might be deleted manually and reinstalled
@@ -635,5 +639,10 @@ tiff(filename = "tmp/starburst_mitc-hg.tiff",
 print(p2)
 graphics.off()
 
+<<<<<<< HEAD
 # sessionInfo()
 # sink()
+=======
+sessionInfo()
+sink()
+>>>>>>> a56204d34ed87fc081b092c12e5b937104a86bec

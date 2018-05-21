@@ -3,7 +3,7 @@
 # | Script:   RNA-seq data analysis and visualization using edgeR, MITC only (David)  |
 # | Author:   Davit Sargsyan                                                          |
 # | Created:  01/29/2018                                                              |
-# | Modified: 05/12/2018(DS): 
+# | Modified: 05/12/2018(DS): LG, HG and MITC only                                    |
 # |-----------------------------------------------------------------------------------|
 # sink(file = "tmp/log_mes13_rnaseq_DEGseq_MITC_v1.R")
 
