@@ -44,6 +44,9 @@ d. RNA-seq processed by Renyi
 ### To Do (01/22/2018)
 1. use edgeR to get p-vals and select (Done, 01/24/2018)
 
+### 05/21/2018
+* Added dendrogram (phylogenic style) to MES13 RNA-seq TIIA (v2)
+
 ### 05/12/2018
 * Methyl-seq analysis of LG, HG and MITC for RO1 (**mes13_methylseq_DSS_MITC_v2.R**)
 

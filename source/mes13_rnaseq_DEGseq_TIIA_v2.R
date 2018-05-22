@@ -3,7 +3,7 @@
 # | Script: RNA-seq data analysis and visualization using edgeR, TIIA only (Wenji)   |
 # | Author: Davit Sargsyan                                                           |
 # | Created: 01/29/2018                                                              |
-# | Modified:                                                                        |
+# | Modified: 05/21/2018(DS): added dendrogram (phylogenic style)                    |
 # |----------------------------------------------------------------------------------|
 # sink(file = "tmp/log_mes13_rnaseq_DEGseq_v1.R")
 # Source: 
@@ -17,6 +17,7 @@ require(data.table)
 require(ggplot2)
 require(DEGseq)
 require(knitr)
+require(ggdendro)
 
 # MES13 data----
 # Treatment legend----
@@ -31,8 +32,7 @@ trt.names <- c("LG",
 # Load data----
 # Question to Renyi: how was the data processed and annotated?
 # dt1 <- fread("data/Renyi_RNAseq_12292017/mes13_fpkm_Dec2017_david.csv")
-dt1 <- fread("data/rna_seq/Renyi_12292017/mes13_featurecounts_Dec2017_david.csv",
-             skip = 1)
+dt1 <- fread("data/rna_seq/Renyi_12292017/mes13_featurecounts_Dec2017_david.csv")
 dt1
 
 # CHECK
@@ -102,7 +102,7 @@ write.csv(hg_lg,
 hg_lg[, mu := (log2(value1) + log2(value2))/2]
 hg_lg[, diff := log2(value1) - log2(value2)]
 
-tiff(filename = "tmp/mes13_rnaseq_DEGseq_HG-LG_maplot.tiff",
+tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_HG-LG_maplot.tiff",
      height = 6,
      width = 6,
      units = 'in',
@@ -148,14 +148,14 @@ tiia_hg[tiia_hg$`Signature(q-value(Storey et al. 2003) < 0.1)`, ]
 
 # Write as CSV----
 write.csv(tiia_hg,
-          file = "tmp/mes13_rnaseq_DEGseq_TIIA-HG.csv",
+          file = "tmp/mes13_tiia_rnaseq_degseq_TIIA-HG.csv",
           row.names = FALSE)
 
 # MA Plot----
 tiia_hg[, mu := (log2(value1) + log2(value2))/2]
 tiia_hg[, diff := log2(value1) - log2(value2)]
 
-tiff(filename = "tmp/mes13_rnaseq_DEGseq_TIIA-HG_maplot.tiff",
+tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_TIIA-HG_maplot.tiff",
      height = 6,
      width = 6,
      units = 'in',
@@ -214,7 +214,7 @@ t1 <- t1[order(t1$`HG-LG`,
                decreasing = TRUE), ]
 t1
 write.csv(t1,
-          file = "tmp/mes13_tiia_genes_q-0.5_log2-0.3.csv",
+          file = "tmp/mes13_tiia_rnaseq_degseq_genes_q-0.5_log2-0.3.csv",
           row.names = FALSE)
 
 ll <- melt.data.table(data = t1,
@@ -228,11 +228,12 @@ ll$Comparison <- factor(ll$Comparison,
 lvls <- ll[ll$Comparison == "HG-LG", ]
 ll$Gene <- factor(ll$Gene,
                   levels = lvls$Gene[order(lvls$`Gene Expression Diff`)])
-# Keep top 100 genes for the plot----
-gene.keep <- unique(ll$Gene[order(abs(ll$`Gene Expression Diff`)) < 101])
-ll <- droplevels(subset(ll,
-                        Gene %in% gene.keep))
-ll
+
+# # Keep top 100 genes for the plot----
+# gene.keep <- unique(ll$Gene[order(abs(ll$`Gene Expression Diff`)) < 101])
+# ll <- droplevels(subset(ll,
+#                         Gene %in% gene.keep))
+# ll
 
 p1 <- ggplot(data = ll) +
   coord_polar("y",
@@ -272,13 +273,109 @@ p1 <- ggplot(data = ll) +
         axis.ticks.y = element_blank())
 p1
 
-tiff(filename = "tmp/mes13_rnaseq_DEGseq_heatmap.tiff",
-     height = 10,
-     width = 10,
+tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_heatmap.tiff",
+     height = 15,
+     width = 15,
      units = 'in',
      res = 300,
      compression = "lzw+p")
 print(p1)
+graphics.off()
+
+# Add dendrogram----
+# Sources: 
+# https://stackoverflow.com/questions/43794870/plotting-a-clustered-heatmap-with-dendrograms-using-rs-plotly
+# https://stats.stackexchange.com/questions/4062/how-to-plot-a-fan-polar-dendrogram-in-r
+# https://cran.r-project.org/web/packages/ggdendro/vignettes/ggdendro.html
+# http://www.sthda.com/english/wiki/beautiful-dendrogram-visualizations-in-r-5-must-known-methods-unsupervised-machine-learning
+dt.dndr <- data.frame(t1[Gene %in% levels(ll$Gene), ])
+rownames(dt.dndr) <- dt.dndr$Gene
+dt.dndr <- dt.dndr[, -1]
+
+# Compute distances between genes----
+sampleDists <- dist(dt.dndr)
+as.matrix(sampleDists)
+
+# Example of the plot using library 'ape'----
+plot(ape::as.phylo(x = hclust(sampleDists)),
+     type = "fan")
+
+# Make dendrogram data----
+dhc <- as.dendrogram(hclust(d = sampleDists),
+                     horiz = TRUE)
+ddata <- dendro_data(dhc, 
+                     type = "rectangle")
+# Gene orger----
+ddata$labels
+
+# Segment data----
+dtp1 <- segment(ddata)
+
+# Hitmap data----
+dtp2 <- ll
+dtp2$Gene <- factor(dtp2$Gene,
+                    levels = ddata$labels$label)
+# ggplot(dtp1) + 
+#   coord_polar(start = 0,
+#               direction = 1,
+#               theta = "x") +
+#   geom_segment(aes(x = x,
+#                    y = y, 
+#                    xend = xend,
+#                    yend = yend)) + 
+#   scale_y_reverse(expand = c(0.2, 0)) +
+#   scale_x_continuous(limits = c(min(dtp1$x), 
+#                                 1.01*max(dtp1$x)))
+# plot(ape::as.phylo(x = hclust(sampleDists)))
+
+p1 <- ggplot(data = dtp2) +
+  coord_polar("y",
+              start = 0,
+              direction = -1) +
+  geom_tile(aes(x =  as.numeric(Comparison),
+                y = Gene, 
+                fill = `Gene Expression Diff`),
+            color = "white") +
+  geom_text(data = dtp2[Comparison == "HG-LG", ],
+            aes(x = rep(1.75,
+                        nlevels(Gene)),
+                y = Gene,
+                angle = 90 + seq(from = 0,
+                                 to = 360,
+                                 length.out = nlevels(Gene))[as.numeric(Gene)],
+                label = unique(Gene)),
+            hjust = 0) +
+  scale_fill_gradient2(low = "red", 
+                       high = "green", 
+                       mid = "grey", 
+                       midpoint = 0, 
+                       name = "Gene Expr Diff") +
+  scale_y_discrete("",
+                   expand = c(0, 0)) +
+  ggtitle("Changes in Gene Expression
+          Fold-Change > 0.3 and q-Value < 0.5") + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  geom_segment(data = dtp1,
+               aes(x = -sqrt(y) + 1.5,
+                   y = x, 
+                   xend = -sqrt(yend) + 1.5,
+                   yend = xend),
+               size = 1) 
+p1
+
+tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_hitmap_with_phylo.tiff",
+     height = 15,
+     width = 15,
+     units = 'in',
+     res = 300,
+     compression = "lzw+p")
+plot(p1)
 graphics.off()
 
 # sessionInfo()
