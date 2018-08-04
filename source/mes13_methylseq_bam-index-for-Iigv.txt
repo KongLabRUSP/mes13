@@ -1,0 +1,32 @@
+# |------------------------------------------|
+# | Project: Study of Diabetes in MES13 cells|
+# | Script: Index BAM files for IGV          |
+# | Scientist: Wenji Li                      |
+# | Analysis: Davit Sargsyan                 |
+# | Created: 08/01/2018                      |
+# |------------------------------------------|
+# 1. Home directory
+HOME_DIR="/datastorage/Processed_BAM_Files/Wenji_MES13_MethylSeq_Processed/Renyi_12292017/BAM_Files/"
+
+# Change working directory
+cd $HOME_DIR
+ls
+
+# DOESN'T WORK!
+# find *.bam -exec samtools sort {}\; 
+# find *.bam -exec samtools index {} \;
+
+samtools sort WJ01.bam -o WJ01S.bam
+samtools index WJ01S.bam
+
+samtools sort WJ02.bam -o WJ02S.bam
+samtools index WJ02S.bam
+
+samtools sort WJ03.bam -o WJ03S.bam
+samtools index WJ03S.bam
+
+samtools sort WJ04.bam -o WJ04S.bam
+samtools index WJ04S.bam
+
+samtools sort WJ05.bam -o WJ05S.bam
+samtools index WJ05S.bam
