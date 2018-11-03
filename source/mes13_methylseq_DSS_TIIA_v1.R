@@ -89,7 +89,9 @@ dt1 <- data.table(gene = dt1$SYMBOL,
                   dt1[, CpG:WJ02.X],
                   dt1[, WJ04.N:WJ04.X],
                   geneName = dt1$GENENAME)
-dt1# # Dispersion Shrinkage for Sequencing data (DSS)----
+dt1
+
+# # Dispersion Shrinkage for Sequencing data (DSS)----
 # # This is based on Wald test for beta-binomial distribution.
 # # Source: https://www.bioconductor.org/packages/release/bioc/vignettes/DSS/inst/doc/DSS.pdf
 # # The DM detection procedure implemented in DSS is based on a rigorous Wald test for betabinomial

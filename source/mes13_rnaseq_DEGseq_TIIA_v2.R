@@ -15,6 +15,7 @@
 # Header----
 require(data.table)
 require(ggplot2)
+require(DESeq2)
 require(DEGseq)
 require(knitr)
 require(ggdendro)
@@ -23,23 +24,23 @@ require(ggdendro)
 # Treatment legend----
 trt.names <- c("LG",
                "HG",
-               "MIC 1.5uM",
-               "TIIA-5 uM",
-               "FX 1uM",
-               "Gen-10 uM",
-               "Ber 6uM")
+               "MIC_1.5uM",
+               "TIIA_5uM",
+               "FX_1uM",
+               "Gen_10uM",
+               "Ber_6uM")
 
 # Load data----
 # Question to Renyi: how was the data processed and annotated?
 # dt1 <- fread("data/Renyi_RNAseq_12292017/mes13_fpkm_Dec2017_david.csv")
-dt1 <- fread("data/rna_seq/Renyi_12292017/mes13_featurecounts_Dec2017_david.csv")
+dt1 <- fread("data/Renyi_RNAseq_12292017/mes13_featurecounts_Dec2017_david.csv")
+# dt1 <- fread("data/rna_seq/Renyi_12292017/mes13_featurecounts_Dec2017_david.csv")
 dt1
 
 # CHECK
 dt1[Geneid == "Tnfrsf25",]
 dt1[Geneid == "Fcer1g",]
 
-# Keep only gene IDs and counts
 # Keep only gene IDs and counts
 dt1 <- dt1[, c("Geneid",
                "WJ1.dedup.bam",
@@ -50,8 +51,8 @@ dt1 <- dt1[, c("Geneid",
                "WJ6.dedup.bam",
                "WJ7.dedup.bam")]
 dt1
-colnames(dt1) <- c("gene",
-                trt.names)
+colnames(dt1) <- c("GeneNames",
+                   trt.names)
 
 dt1
 
@@ -66,43 +67,94 @@ dt1
 
 # Leave the 3 treatments only----
 dt1 <- subset(dt1,
-              select = c(1:3, 5))
+              select = c("GeneNames",
+                         "LG",
+                         "HG",
+                         "TIIA_5uM"))
 dt1
+
+# Normalize data to fragments per million (FPM)----
+mat <- data.frame(sample = colnames(dt1)[-1],
+                  trt = colnames(dt1)[-1],
+                  repl = factor(rep(1, ncol(dt1) - 1)))
+mat
+
+dtm <- as.matrix(dt1[, -1, with = FALSE])
+rownames(dtm) <- dt1$GeneNames
+head(dtm)
+
+dds <- DESeqDataSetFromMatrix(countData = dtm, 
+                              colData = mat,
+                              ~ trt)
+dds <- estimateSizeFactors(dds)
+dds
+
+# Fragments per million (FPM) normalization----
+dt1.fpm <- data.table(GeneNames = dt1$GeneNames,
+                      fpm(dds,
+                          robust = FALSE))
+colnames(dt1.fpm)[-1] <- paste(colnames(dt1.fpm)[-1],
+                               "fpm",
+                               sep = "_")
+dt1.fpm
 
 # DEGseq----
 # a. (HG - LG)----
+# DEGexp(geneExpMatrix1 = dt1.fpm,
+#        geneCol1 = which(colnames(dt1) == "GeneNames"), 
+#        expCol1 = which(colnames(dt1) == "HG_fpm"), 
+#        groupLabel1 = "HG",
+#        depth1 = sum(dt1$HG),
+#        
+#        geneExpMatrix2 = dt1,
+#        geneCol2 = which(colnames(dt1) == "GeneNames"), 
+#        expCol2 = which(colnames(dt1) == "LG_fpm"),
+#        groupLabel2 = "LG",
+#        depth2 = sum(dt1$LG),
+#        
+#        foldChange = 2,
+#        qValue = 0.1,
+#        thresholdKind = 5, 
+#        rawCount = FALSE,
+#        normalMethod = "none",
+#        method = "MARS",
+#        outputDir = "tmp/hg_lg")
+
 DEGexp(geneExpMatrix1 = dt1,
-       geneCol1 = 1, 
-       expCol1 = 3, 
-       groupLabel1 = colnames(dt1)[3],
+       geneCol1 = which(colnames(dt1) == "GeneNames"), 
+       expCol1 = which(colnames(dt1) == "HG"), 
+       groupLabel1 = "HG",
        
        geneExpMatrix2 = dt1,
-       geneCol2 = 1, 
-       expCol2 = 2,
-       groupLabel2 = colnames(dt1)[2],
+       geneCol2 = which(colnames(dt1) == "GeneNames"), 
+       expCol2 = which(colnames(dt1) == "LG"),
+       groupLabel2 = "LG",
        
-       foldChange = 2,
-       qValue = 0.1,
+       foldChange = 2^0.3,
+       qValue = 0.5,
        thresholdKind = 5, 
        rawCount = TRUE,
        normalMethod = "none",
        method = "MARS",
-       outputDir = "tmp")
+       outputDir = "tmp/hg_lg")
 
-hg_lg <- fread("tmp/output_score.txt")
+hg_lg <- fread("tmp/hg_lg/output_score.txt")
 hg_lg
-hg_lg[hg_lg$`Signature(q-value(Storey et al. 2003) < 0.1)`,]
+hg_lg[hg_lg$`Signature(q-value(Storey et al. 2003) < 0.5)`,]
 
 # Write as CSV----
 write.csv(hg_lg,
-          file = "tmp/mes13_rnaseq_DEGseq_HG-LG.csv",
+          file = "tmp/hg_lg/MES13_RNA_DEGseq_HG-LG.csv",
           row.names = FALSE)
 
 # MA Plot----
-hg_lg[, mu := (log2(value1) + log2(value2))/2]
-hg_lg[, diff := log2(value1) - log2(value2)]
+hg_lg <- merge(hg_lg,
+               dt1.fpm,
+               by = "GeneNames")
+hg_lg[, mu := (log2(HG_fpm + 1) + log2(LG_fpm + 1))/2]
+hg_lg[, diff := log2(HG_fpm + 1) - log2(LG_fpm + 1)]
 
-tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_HG-LG_maplot.tiff",
+tiff(filename = "tmp/hg_lg/MES13_RNA_DEGseq_HG-LG_maplot.tiff",
      height = 6,
      width = 6,
      units = 'in',
@@ -112,7 +164,7 @@ plot(hg_lg$diff ~ hg_lg$mu,
      pch = ".",
      xlab = "Mean",
      ylab = "Difference",
-     main = "MES13 Gene Expression, HG-LG, FDR < 0.5")
+     main = "MES13 FPM-Normalized Gene Expressions\nHG-LG, FDR < 0.5")
 points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff > 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff > 0] ,
        pch = "x",
        col = "green")
@@ -125,37 +177,40 @@ graphics.off()
 
 # b. (TIIA - HG)----
 DEGexp(geneExpMatrix1 = dt1,
-       geneCol1 = 1, 
-       expCol1 = 4, 
-       groupLabel1 = colnames(dt1)[4],
+       geneCol1 = which(colnames(dt1) == "GeneNames"), 
+       expCol1 = which(colnames(dt1) == "TIIA_5uM"), 
+       groupLabel1 = "TIIA_5uM",
        
        geneExpMatrix2 = dt1,
-       geneCol2 = 1, 
-       expCol2 = 3,
-       groupLabel2 = colnames(dt1)[3],
+       geneCol2 = which(colnames(dt1) == "GeneNames"), 
+       expCol2 = which(colnames(dt1) == "HG"),
+       groupLabel2 = "HG",
        
-       foldChange = 2,
-       qValue = 0.1,
+       foldChange = 2^0.3,
+       qValue = 0.5,
        thresholdKind = 5, 
        rawCount = TRUE,
        normalMethod = "none",
        method = "MARS",
-       outputDir = "tmp")
+       outputDir = "tmp/tiia_hg")
 
-tiia_hg <- fread("tmp/output_score.txt")
+tiia_hg <- fread("tmp/tiia_hg/output_score.txt")
 tiia_hg
-tiia_hg[tiia_hg$`Signature(q-value(Storey et al. 2003) < 0.1)`, ]
+tiia_hg[tiia_hg$`Signature(q-value(Storey et al. 2003) < 0.5)`, ]
 
 # Write as CSV----
 write.csv(tiia_hg,
-          file = "tmp/mes13_tiia_rnaseq_degseq_TIIA-HG.csv",
+          file = "tmp/tiia_hg/MES13_RNA_DEGseq_TIIA-HG.csv",
           row.names = FALSE)
 
 # MA Plot----
-tiia_hg[, mu := (log2(value1) + log2(value2))/2]
-tiia_hg[, diff := log2(value1) - log2(value2)]
+tiia_hg <- merge(tiia_hg,
+                 dt1.fpm,
+                 by = "GeneNames")
+tiia_hg[, mu := (log2(TIIA_5uM_fpm + 1) + log2(HG_fpm + 1))/2]
+tiia_hg[, diff := log2(TIIA_5uM_fpm + 1) - log2(HG_fpm + 1)]
 
-tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_TIIA-HG_maplot.tiff",
+tiff(filename = "tmp/tiia_hg/MES13_RNA_DEGseq_TIIA-HG_maplot.tiff",
      height = 6,
      width = 6,
      units = 'in',
@@ -165,7 +220,7 @@ plot(tiia_hg$diff ~ tiia_hg$mu,
      pch = ".",
      xlab = "Mean",
      ylab = "Difference",
-     main = "MES13 Gene Expression, TIIA-HG, FDR < 0.5")
+     main = "MES13 FPM-Normalized Gene Expressions\nTIIA-HG, FDR < 0.5")
 points(tiia_hg$diff[tiia_hg$`q-value(Storey et al. 2003)` < 0.5 & tiia_hg$diff > 0] ~ tiia_hg$mu[tiia_hg$`q-value(Storey et al. 2003)` < 0.5 & tiia_hg$diff > 0] ,
        pch = "x",
        col = "green")
@@ -273,7 +328,7 @@ p1 <- ggplot(data = ll) +
         axis.ticks.y = element_blank())
 p1
 
-tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_heatmap.tiff",
+tiff(filename = "tmp/MES13_RNA_DEGseq_TIIA-HG-LG_heatmap.tiff",
      height = 15,
      width = 15,
      units = 'in',
@@ -327,7 +382,7 @@ dtp2$Gene <- factor(dtp2$Gene,
 #   scale_x_continuous(limits = c(min(dtp1$x), 
 #                                 1.01*max(dtp1$x)))
 # plot(ape::as.phylo(x = hclust(sampleDists)))
-
+offset.size <- 10
 p1 <- ggplot(data = dtp2) +
   coord_polar("y",
               start = 0,
@@ -342,9 +397,17 @@ p1 <- ggplot(data = dtp2) +
                 y = Gene,
                 angle = 90 + seq(from = 0,
                                  to = 360,
-                                 length.out = nlevels(Gene))[as.numeric(Gene)],
+                                 length.out = nlevels(Gene))[as.numeric(Gene)] + 
+                  offset.size,
                 label = unique(Gene)),
             hjust = 0) +
+  geom_text(data = dtp2[Gene == levels(dtp2$Gene)[1], ],
+            aes(x = 1:nlevels(Comparison),
+                y = rep(-offset.size,
+                        nlevels(Comparison)),
+                angle = 0,
+                label = levels(Comparison)),
+            hjust = 1.5) +
   scale_fill_gradient2(low = "red", 
                        high = "green", 
                        mid = "grey", 
@@ -362,14 +425,14 @@ p1 <- ggplot(data = dtp2) +
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) +
   geom_segment(data = dtp1,
-               aes(x = -sqrt(y) + 1.5,
+               aes(x = -sqrt(y) + 0.5,
                    y = x, 
-                   xend = -sqrt(yend) + 1.5,
+                   xend = -sqrt(yend) + 0.5,
                    yend = xend),
                size = 1) 
-p1
+# p1
 
-tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_hitmap_with_phylo.tiff",
+tiff(filename = "tmp/MES13_RNA_DEGseq_TIIA-HG-LG_hitmap_with_phylo.tiff",
      height = 15,
      width = 15,
      units = 'in',
@@ -377,6 +440,11 @@ tiff(filename = "tmp/mes13_tiia_rnaseq_degseq_hitmap_with_phylo.tiff",
      compression = "lzw+p")
 plot(p1)
 graphics.off()
+
+# CHECK:
+dt1.fpm[GeneNames == "Iigp1"]
+dtp2[Gene == "Iigp1"]
+# Correct
 
 # sessionInfo()
 # sink()
