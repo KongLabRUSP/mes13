@@ -17,8 +17,8 @@
 **mes13_rnaseq_DEGseq_MITC_v1.R**: current (05/12/2018) version of RNA-seq data analysis script for LG, HG and MITC. Used for David's paper and for Kidney RO1.        
 **mes13_methylseq_DSS_MITC_v2.R**: current (05/12/2018) version of DNA methyl-seq data analysis script for LG, HG and MITC. Used for David's paper and for Kidney RO1. This version DOES NOT actually use package DSS even though it is in the title.   
     
-**mes13_rnaseq_DEGseq_TIIA_v2.R**: current (05/12/2018) version of RNA-seq data analysis script for LG, HG and TIIA. Used for Wenji's paper.    
-**mes13_methylseq_DSS_TIIA_v1.R**: current (05/12/2018) version of DNA methyl-seq data analysis script for LG, HG and MITC. Used for wenji's paper. This version DOES NOT actually use package DSS even though it is in the title.
+**mes13_rnaseq_DEGseq_TIIA_v2.R**: current (01/24/2019) version of RNA-seq data analysis script for LG, HG and TIIA. Used for Wenji's paper.    
+**mes13_methylseq_DSS_TIIA_v3.1.R**: current (01/24/2019) version of DNA methyl-seq data analysis script for LG, HG and MITC. Used for wenji's paper. This version DOES NOT actually use package DSS even though it is in the title.
    
 ### Raw Data
 FastQ file legend (both, Methyl-seq and RNA-seq):    
@@ -43,6 +43,9 @@ d. RNA-seq processed by Renyi
 ## Daily Logs<a name="logs"></a>
 ### To Do (01/22/2018)
 1. use edgeR to get p-vals and select (Done, 01/24/2018)
+
+### 11/30/2018
+* Made ***mes13_methylseq_DSS_TIIA_v3.1.R*** and reran the analysis.
 
 ### 05/21/2018
 * Added dendrogram (phylogenic style) to MES13 RNA-seq TIIA (v2)

@@ -63,8 +63,8 @@ p1 <- ggplot(t1,
               start = 0,
               direction = -1) +
   scale_x_continuous("",
-                   limits = c(-1.5, 1.5),
-                   expand = c(0, 0)) + 
+                     limits = c(-1.5, 1.5),
+                     expand = c(0, 0)) + 
   ggtitle("Annotation by Region (%)") +
   theme(plot.title = element_text(hjust = 0.5),
         axis.title.x = element_blank(),
@@ -123,15 +123,15 @@ dt1
 
 # Regions----
 kable(data.table(table(substr(dt1$anno, 1, 9))))
-  # |V1        |     N|
-  # |:---------|-----:|
-  # |3' UTR    |  6066|
-  # |5' UTR    |  8894|
-  # |Distal In | 61587|
-  # |Downstrea |  3019|
-  # |Exon (uc0 | 20349|
-  # |Intron (u | 77407|
-  # |Promoter  | 39789|
+# |V1        |     N|
+# |:---------|-----:|
+# |3' UTR    |  6066|
+# |5' UTR    |  8894|
+# |Distal In | 61587|
+# |Downstrea |  3019|
+# |Exon (uc0 | 20349|
+# |Intron (u | 77407|
+# |Promoter  | 39789|
 
 # Separate Promoter, Body and Downstream----
 dt1$reg <- as.character(dt1$anno)
@@ -151,7 +151,7 @@ dt1$reg[substr(dt1$anno,
 # Fixed by setting tssRegion = c(-3000, 0) in annotation
 # CHECK:
 dt1[dt1$reg == "Promoter" &
-          dt1$distanceToTSS > 0,]
+      dt1$distanceToTSS > 0,]
 # None
 
 # c. Downstream: Distal Intergenic and  Downstream
@@ -167,13 +167,13 @@ dt1$reg <- factor(dt1$reg,
                              "3' UTR",
                              "Downstream"))
 kable(data.table(table(dt1$reg)))
-  # |V1         |     N|
-  # |:----------|-----:|
-  # |Promoter   | 39789|
-  # |5' UTR     |  8894|
-  # |Body       | 97756|
-  # |3' UTR     |  6066|
-  # |Downstream | 64606|
+# |V1         |     N|
+# |:----------|-----:|
+# |Promoter   | 39789|
+# |5' UTR     |  8894|
+# |Body       | 97756|
+# |3' UTR     |  6066|
+# |Downstream | 64606|
 
 
 # CpG distribution and coverage----
@@ -422,13 +422,13 @@ rna_dna$reg <- factor(rna_dna$reg,
                                  "3' UTR",
                                  "Downstream"))
 kable(data.table(table(dt1$reg)))
-  # |V1         |     N|
-  # |:----------|-----:|
-  # |Promoter   | 36672|
-  # |5' UTR     |  8349|
-  # |Body       | 84220|
-  # |3' UTR     |  5360|
-  # |Downstream | 53278|
+# |V1         |     N|
+# |:----------|-----:|
+# |Promoter   | 36672|
+# |5' UTR     |  8349|
+# |Body       | 84220|
+# |3' UTR     |  5360|
+# |Downstream | 53278|
 
 g1 <- rna_dna[rna_dna$`HG-LG DNA` >= 10 & 
                 rna_dna$`HG-LG` <= -0.3 &
@@ -602,8 +602,8 @@ dna$reg <- factor(dna$reg,
 dna
 
 setkey(dna,
-        gene,
-        distanceToTSS)
+       gene,
+       distanceToTSS)
 dna[, distRank := rank(distanceToTSS),
     by = gene]
 
