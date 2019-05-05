@@ -10,16 +10,13 @@
 # sink(file = "tmp/log_skin_uvb_dna_v3.1.txt")
 date()
 
-# NOTE: several packages, e.g. Rcpp, MASS, etc., might be deleted manually and reinstalled
-# Workflow: https://www.bioconductor.org/help/workflows/rnaseqGene/
-# source("https://bioconductor.org/biocLite.R")
-# biocLite("TxDb.Mmusculus.UCSC.mm10.knownGene")
-# biocLite("ChIPseeker")
-# biocLite("DO.db")
-# biocLite("GenomicRanges")
-# biocLite("org.Mm.eg.db")
-# biocLite("DSS")
-# biocLite("bsseq")
+# if (!requireNamespace("BiocManager",
+#                       quietly = TRUE))
+#   install.packages("BiocManager")
+# BiocManager::install("ChIPseeker")
+# BiocManager::install("TxDb.Mmusculus.UCSC.mm10.knownGene")
+# BiocManager::install("DSS")
+# BiocManager::install("org.Mm.eg.db")
 
 require(data.table)
 require(ggplot2)
@@ -126,13 +123,13 @@ dt1
 kable(data.table(table(substr(dt1$anno, 1, 9))))
   # |V1        |     N|
   # |:---------|-----:|
-  # |3' UTR    |  4363|
-  # |5' UTR    |   742|
-  # |Distal In | 61077|
-  # |Downstrea |  2724|
-  # |Exon (uc0 | 11569|
-  # |Intron (u | 54179|
-  # |Promoter  | 82519|
+  # |3' UTR    |  4549|
+  # |5' UTR    |   533|
+  # |Distal In | 49714|
+  # |Downstrea |  2183|
+  # |Exon (ENS | 14335|
+  # |Intron (E | 51484|
+  # |Promoter  | 94369|
 
 # Separate Promoter, Body and Downstream----
 dt1$reg <- as.character(dt1$anno)
@@ -170,11 +167,11 @@ dt1$reg <- factor(dt1$reg,
 kable(data.table(table(dt1$reg)))
   # |V1         |     N|
   # |:----------|-----:|
-  # |Promoter   | 82519|
-  # |5' UTR     |   742|
-  # |Body       | 65748|
-  # |3' UTR     |  4363|
-  # |Downstream | 63801|
+  # |Promoter   | 94369|
+  # |5' UTR     |   533|
+  # |Body       | 65819|
+  # |3' UTR     |  4549|
+  # |Downstream | 51897|
 
 # CpG distribution and coverage----
 p2 <- ggplot(dt1,
@@ -210,7 +207,7 @@ head(tmp)
 # Remove rows with all NAs
 ndx.keep <- rowSums(is.na(tmp)) < 6
 sum(ndx.keep)
-# 211,134 out of 217,111
+# 211,128 out of 217,111
 
 dt1 <- dt1[ndx.keep, ]
 tmp <- tmp[ndx.keep, ]
@@ -252,7 +249,7 @@ dt1 <- dt1[ndx.keep, ]
 dtN <- dtN[ndx.keep, ]
 dtX <- dtX[ndx.keep, ]
 dim(dtX)
-# 187,607  remaine
+# 187,601  remaine
 
 # Hits per CpG average (i.e. vertical coverage)----
 t1 <- apply(dtN,
@@ -398,11 +395,12 @@ rna_dna$reg <- factor(rna_dna$reg,
 kable(data.table(table(dt1$reg)))
   # |V1         |     N|
   # |:----------|-----:|
-  # |Promoter   | 75668|
-  # |5' UTR     |   681|
-  # |Body       | 55030|
-  # |3' UTR     |  3770|
-  # |Downstream | 52458|
+  # |Promoter   | 85752|
+  # |5' UTR     |   489|
+  # |Body       | 54716|
+  # |3' UTR     |  3917|
+  # |Downstream | 42727|
+rna_dna[rna_dna$gene == "Nmu",]
 
 g1 <- rna_dna[rna_dna$`HG-LG DNA` >= 10 & 
                 rna_dna$`HG-LG` <= -0.3 &
@@ -454,7 +452,8 @@ tmp1$ypos <- seq(from = min(rna_dna$`HG-LG`),
                  length.out = length(tmp1$gene))
 tmp1
 
-tmp2 <- unique(rna_dna[gene %in% unique(g2$gene) &
+tmp2 <- unique(rna_dna[gene %in% c(unique(g2$gene),
+                                   "Nmu") &
                          reg == "Promoter",
                        c("gene",
                          "reg",
@@ -545,7 +544,8 @@ print(p1)
 graphics.off()
 
 # TIIA vs. HG Starburst----
-tmp3 <- unique(rna_dna[gene %in% unique(g3$gene) &
+tmp3 <- unique(rna_dna[gene %in% c(unique(g3$gene),
+                                   "Fgl2") &
                          reg == "Promoter",
                        c("gene",
                          "reg",
@@ -724,84 +724,78 @@ dt3 <- merge(dt3,
 dt3
 
 # Isolate genes----
-for (i in 1:length(unique(dna$gene))) {
-  gX <- unique(dt3$gene)
-  dna.gX <- dt3[dt3$gene %in% gX, ]
-  dna.gX$y0 <- 0
-  
-  dna.gX$Treatment <- paste(dna.gX$Treatment,
-                            " (RNA = ",
-                            round(dna.gX$RNA, 3),
-                            ")",
-                            sep = "")
-  
-  p1 <- ggplot(dna.gX,
-               aes(x = distRank,
-                   y = DNA)) +
-    facet_wrap(.~ Treatment + gene,
-               # scales = "free_y",
-               ncol = 2) +
-    geom_rect(aes(xmin = -Inf,
-                  xmax = Inf,
-                  ymin = -Inf,
-                  ymax = -10),
-              fill = "red",
-              alpha = 0.1) +
-    geom_rect(aes(xmin = -Inf,
-                  xmax = Inf,
-                  ymin = 10,
-                  ymax = Inf),
-              fill = "green",
-              alpha = 0.1) +
-    geom_hline(yintercept = 0) +
-    geom_hline(yintercept = c(10,
-                              -10),
-               linetype = "dashed") +
-    geom_segment(aes(x = distRank,
-                     y = y0,
-                     xend = distRank,
-                     yend = DNA)) + 
-    geom_point(aes(x = distRank,
-                   y = DNA,
-                   fill = annotation,
-                   size = reg),
-               shape = 21) +
-    scale_x_continuous("Distance from TSS",
-                       breaks = dna.gX$distRank,
-                       labels = dna.gX$distanceToTSS) +
-    scale_y_continuous("% Methylation") +
-    ggtitle(paste("Gene:",
-                  gX)) +
-    scale_fill_manual("Region",
-                      values = c("Distal Intergenic" = "purple",
-                                 "Exon" = "blue",
-                                 "Intron" = "white",
-                                 "Promoter" = "brown",
-                                 "3' UTR" = "black",
-                                 "5' UTR" = "yellow",
-                                 "Downstream" = "orange")) +
-    scale_size_manual("Number of CpG-s",
-                      values = c("5 to 10" = 5,
-                                 "11 to 20" = 6,
-                                 ">20" = 7)) +
-    guides(fill = guide_legend(override.aes = list(size = 7))) +
-    theme(plot.title = element_text(hjust = 0.5),
-          #legend.position = "top",
-          axis.text.x = element_text(angle = 45,
-                                     hjust = 1))
-  p1
-  tiff(filename = paste("tmp/lollipops/",
-                        gX,
-                        ".tiff",
-                        sep = ""),
-       height = 8,
-       width = 8,
-       units = 'in',
-       res = 300,
-       compression = "lzw+p")
-  print(p1)
-  graphics.off()
-}
+gX <- unique(dt3$gene)
+dna.gX <- dt3[dt3$gene %in% gX, ]
+dna.gX$y0 <- 0
+
+dna.gX$Treatment <- paste(dna.gX$Treatment,
+                          " (RNA = ",
+                          round(dna.gX$RNA, 3),
+                          ")",
+                          sep = "")
+
+p1 <- ggplot(dna.gX,
+             aes(x = distRank,
+                 y = DNA)) +
+  facet_wrap(.~  gene + Treatment,
+             scales = "free_x",
+             ncol = 4) +
+  geom_rect(aes(xmin = -Inf,
+                xmax = Inf,
+                ymin = -Inf,
+                ymax = -10),
+            fill = "pink") +
+  geom_rect(aes(xmin = -Inf,
+                xmax = Inf,
+                ymin = 10,
+                ymax = Inf),
+            fill = "lightgreen") +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = c(10,
+                            -10),
+             linetype = "dashed") +
+  geom_segment(aes(x = distRank,
+                   y = y0,
+                   xend = distRank,
+                   yend = DNA)) + 
+  geom_point(aes(x = distRank,
+                 y = DNA,
+                 fill = annotation,
+                 size = reg),
+             shape = 21) +
+  # scale_x_continuous("Distance from TSS",
+  #                    breaks = dna.gX$distRank,
+  #                    labels = dna.gX$distanceToTSS) +
+  scale_x_continuous("Distance from TSS") +
+  scale_y_continuous("% Methylation") +
+  ggtitle(paste("Gene:",
+                gX)) +
+  scale_fill_manual("Region",
+                    values = c("Distal Intergenic" = "purple",
+                               "Exon" = "blue",
+                               "Intron" = "white",
+                               "Promoter" = "brown",
+                               "3' UTR" = "black",
+                               "5' UTR" = "yellow",
+                               "Downstream" = "orange")) +
+  scale_size_manual("Number of CpG-s",
+                    values = c("5 to 10" = 5,
+                               "11 to 20" = 6,
+                               ">20" = 7)) +
+  guides(fill = guide_legend(override.aes = list(size = 7))) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "top",
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+p1
+tiff(filename = "tmp/lollipops.tiff",
+     height = 8,
+     width = 12,
+     units = 'in',
+     res = 1200,
+     compression = "lzw+p")
+print(p1)
+graphics.off()
 
 # sessionInfo()
 # sink()

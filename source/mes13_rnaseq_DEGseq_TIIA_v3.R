@@ -5,12 +5,15 @@
 # | Created: 01/29/2018                                                              |
 # | Modified: 05/21/2018(DS): added dendrogram (phylogenic style)                    |
 # |----------------------------------------------------------------------------------|
-# sink(file = "tmp/log_mes13_rnaseq_DEGseq_v1.R")
+sink(file = "tmp/log_mes13_rnaseq_DEGseq_TIIA_v3.R")
 # Source: 
 # https://bioconductor.org/packages/release/bioc/html/DEGseq.html
 
-# source("https://bioconductor.org/biocLite.R")
-# biocLite("DEGseq")
+# if (!requireNamespace("BiocManager",
+#                       quietly = TRUE))
+#   install.packages("BiocManager")
+# BiocManager::install("DESeq2")
+# BiocManager::install("DEGseq")
 
 # Header----
 require(data.table)
@@ -302,6 +305,8 @@ dtp2$Gene <- factor(dtp2$Gene,
                     levels = ddata$labels$label)
 offset.size <- 10
 
+
+
 p1 <- ggplot(data = dtp2) +
   coord_polar("y",
               start = 0,
@@ -310,17 +315,27 @@ p1 <- ggplot(data = dtp2) +
                 y = Gene, 
                 fill = `Gene Expression Diff`),
             color = "white") +
+  # geom_text(data = dtp2[Comparison == "HG-LG", ],
+  #           aes(x = rep(2.25,
+  #                       nlevels(Gene)),
+  #               y = Gene,
+  #               angle = 90 + seq(from = 0,
+  #                                to = 360,
+  #                                length.out = nlevels(Gene))[as.numeric(Gene)] +
+  #                 offset.size,
+  #               label = 1:nlevels(Gene)),
+  #           hjust = 0,
+  #           size = 6) +
   geom_text(data = dtp2[Comparison == "HG-LG", ],
-            aes(x = rep(2.25,
+            aes(x = rep(1.75,
                         nlevels(Gene)),
                 y = Gene,
                 angle = 90 + seq(from = 0,
                                  to = 360,
-                                 length.out = nlevels(Gene))[as.numeric(Gene)] +
+                                 length.out = nlevels(Gene))[as.numeric(Gene)] + 
                   offset.size,
-                label = 1:nlevels(Gene)),
-            hjust = 0,
-            size = 6) +
+                label = unique(Gene)),
+            hjust = 0) +
   geom_text(data = dtp2[Gene == levels(dtp2$Gene)[1], ],
             aes(x = 1:nlevels(Comparison),
                 y = rep(-offset.size,
@@ -361,7 +376,7 @@ tiff(filename = "tmp/MES13_RNA_DEGseq_TIIA-HG-LG_hitmap_with_phylo.tiff",
      height = 12,
      width = 12,
      units = 'in',
-     res = 300,
+     res = 1200,
      compression = "lzw+p")
 plot(p1)
 graphics.off()
@@ -371,5 +386,5 @@ dt1.fpm[GeneNames == "Iigp1"]
 dtp2[Gene == "Iigp1"]
 # Correct
 
-# sessionInfo()
-# sink()
+sessionInfo()
+sink()
