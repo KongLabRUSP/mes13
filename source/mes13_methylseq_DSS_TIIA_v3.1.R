@@ -6,6 +6,7 @@
 # | Created: 03/17/2018                                                              |
 # | Modified:04/05/2018, DS: changed hitmaps to donut plots; added more comparisons  |
 # |          11/30/2018, DS: TIIA methyl-seq sample is WJ4                           |
+# |          04/12/2019, DS: Added fonts to edit text on plots, for publication      |
 # |----------------------------------------------------------------------------------|
 # sink(file = "tmp/log_skin_uvb_dna_v3.1.txt")
 date()
@@ -21,9 +22,17 @@ date()
 # biocLite("DSS")
 # biocLite("bsseq")
 
+# Install extra fonts
+# Source: https://stackoverflow.com/questions/34522732/changing-fonts-in-ggplot2
+windowsFonts()
+require(extrafont)
+font_import()
+fonts()
+
 require(data.table)
 require(ggplot2)
 require(knitr)
+require(extrafont)
 
 require(ChIPseeker)
 require(TxDb.Mmusculus.UCSC.mm10.knownGene)
