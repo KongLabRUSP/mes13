@@ -84,7 +84,7 @@ tiff(filename = "tmp/mes13_anno_by_reg.tiff",
      height = 5,
      width = 5,
      units = 'in',
-     res = 300,
+     res = 1200,
      compression = "lzw+p")
 print(p1)
 graphics.off()
@@ -195,10 +195,10 @@ p2 <- ggplot(dt1,
 p2
 
 tiff(filename = "tmp/mes13_CpG_by_reg_hist.tiff",
-     height = 8,
-     width = 12,
+     height = 6,
+     width = 9,
      units = 'in',
-     res = 300,
+     res = 1200,
      compression = "lzw+p")
 print(p2)
 graphics.off()
@@ -210,7 +210,7 @@ head(tmp)
 # Remove rows with all NAs
 ndx.keep <- rowSums(is.na(tmp)) < 6
 sum(ndx.keep)
-# 211,940 out of 217,111
+# 211,134 out of 217,111
 
 dt1 <- dt1[ndx.keep, ]
 tmp <- tmp[ndx.keep, ]
@@ -352,39 +352,9 @@ tiff(filename = "tmp/mes13_avg_methyl_by_reg.tiff",
      height = 6,
      width = 7,
      units = 'in',
-     res = 300,
+     res = 1200,
      compression = "lzw+p")
 print(p1)
-graphics.off()
-
-p2 <- ggplot(mumth,
-             aes(x = reg,
-                 y = mu,
-                 group = trt,
-                 fill = trt)) +
-  geom_errorbar(aes(ymax = mu + 1.96*sem,
-                    ymin = mu),
-                width = 0.5,
-                position = position_dodge(0.9)) +
-  geom_point(position = position_dodge(0.9),
-             size = 1) +
-  geom_bar(position = position_dodge(0.9),
-           stat="identity",
-           color = "black") +
-  scale_x_discrete("Region") +
-  scale_y_continuous() +
-  ggtitle("Proportion of Methylated CpG by Region") +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.text.x = element_text(angle = 45,
-                                   hjust = 1))
-p2
-tiff(filename = "tmp/mes13_avg_sd_methyl_by_reg.tiff",
-     height = 6,
-     width = 7,
-     units = 'in',
-     res = 300,
-     compression = "lzw+p")
-print(p2)
 graphics.off()
 
 # DNA vs. RNA----
@@ -471,48 +441,83 @@ write.csv(g4,
           file = "tmp/dna.dn_rna.up_tiia-hg.csv",
           row.names = FALSE)
 
+# HG vs. LG Starburst----
+tmp1 <- unique(rna_dna[gene %in% unique(g1$gene) &
+                         reg == "Promoter",
+                       c("gene",
+                         "reg",
+                         "HG-LG")])
+setkey(tmp1,
+       `HG-LG`)
+tmp1$ypos <- seq(from = min(rna_dna$`HG-LG`), 
+                 to = max(rna_dna$`HG-LG`), 
+                 length.out = length(tmp1$gene))
+tmp1
+
+tmp2 <- unique(rna_dna[gene %in% unique(g2$gene) &
+                         reg == "Promoter",
+                       c("gene",
+                         "reg",
+                         "HG-LG")])
+setkey(tmp2,
+       `HG-LG`)
+tmp2$ypos <- seq(from = min(rna_dna$`HG-LG`), 
+                 to = max(rna_dna$`HG-LG`), 
+                 length.out = length(tmp2$gene))
+tmp2
+
+rna_dna$a <- 0.7
+rna_dna$a[rna_dna$`HG-LG DNA` > -10 & 
+            rna_dna$`HG-LG DNA` < 10] <- 0.3
+
 p1 <- ggplot(data = rna_dna,
              aes(x = `HG-LG DNA`,
                  y = `HG-LG`,
                  fill = reg)) +
-  geom_point(alpha = 0.7,
-             size = 2,
-             shape = 21) +
-  # geom_text(data = unique(rna_dna[gene %in% unique(g1$gene) &
-  #                                   reg == "Promoter", 
-  #                                 c("gene",
-  #                                   "reg",
-  #                                   "HG-LG")]),
-  #           aes(x = 40,
-  #               y = `HG-LG`,
-  #               label = gene),
-  #           color = "blue",
-  #           size = 2) +
-  # geom_text(data = unique(rna_dna[gene %in% unique(g2$gene) &
-  #                                   reg == "Promoter", 
-  #                                 c("gene",
-  #                                   "reg",
-  #                                   "HG-LG")]),
-  #           aes(x = -40,
-  #               y = `HG-LG`,
-  #               label = gene),
-  #           color = "blue",
-  #           size = 2) +
-geom_segment(data = unique(rna_dna[gene %in% unique(g1$gene) &
-                                     reg == "Promoter",
-                                   c("gene",
-                                     "reg",
-                                     "HG-LG")]),
-             aes(x = 30,
-                 y = `HG-LG`,
-                 xend = 40,
-                 yend = `HG-LG`)) +
+  geom_segment(data = tmp1,
+               aes(x = -35,
+                   y = `HG-LG`,
+                   xend = 25,
+                   yend = `HG-LG`),
+               linetype = "dotted") +
+  geom_segment(data = tmp1,
+               aes(x = 25,
+                   y = `HG-LG`,
+                   xend = 35,
+                   yend = ypos)) +
+  geom_text(data = tmp1,
+            aes(x = 35,
+                y = ypos,
+                label = gene),
+            size = 4,
+            hjust = 0) +
+  geom_segment(data = tmp2,
+               aes(x = -35,
+                   y = `HG-LG`,
+                   xend = 25,
+                   yend = `HG-LG`),
+               linetype = "dotted") +
+  geom_segment(data = tmp2,
+               aes(x = -45,
+                   y = ypos,
+                   xend = -35,
+                   yend = `HG-LG`)) +
+  geom_text(data = tmp2,
+            aes(x = -45,
+                y = ypos,
+                label = gene),
+            size = 4,
+            hjust = 1) +
   geom_hline(yintercept = c(-0.3, 0.3),
              linetype = "dashed") +
   geom_vline(xintercept = c(-10, 10),
              linetype = "dashed") +
+  geom_point(aes(alpha = a),
+             size = 2,
+             shape = 21) +
   scale_x_continuous("DNA Methylation Difference(%)",
-                     breaks = seq(-30, 30, 10)) +
+                     breaks = seq(-35, 35, 10),
+                     limits = c(-50, 45)) +
   scale_y_continuous("RNA Expression Difference (log2)") +
   ggtitle("HG - LG") +
   scale_fill_manual("Region",
@@ -521,63 +526,121 @@ geom_segment(data = unique(rna_dna[gene %in% unique(g1$gene) &
                                "Body" = "blue",
                                "3' UTR" = "grey",
                                "Downstream" = "red")) +
-  theme(plot.title = element_text(hjust = 0.5))
+  scale_alpha_continuous(guide = FALSE) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "top",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"))
 p1
 tiff(filename = "tmp/starburst_hg-lg.tiff",
-     height = 10,
-     width = 10,
+     height = 8,
+     width = 8,
      units = 'in',
      res = 300,
      compression = "lzw+p")
 print(p1)
 graphics.off()
 
+# TIIA vs. HG Starburst----
+tmp3 <- unique(rna_dna[gene %in% unique(g3$gene) &
+                         reg == "Promoter",
+                       c("gene",
+                         "reg",
+                         "TIIA-HG")])
+setkey(tmp3,
+       `TIIA-HG`)
+tmp3$ypos <- seq(from = min(rna_dna$`TIIA-HG`), 
+                 to = max(rna_dna$`TIIA-HG`), 
+                 length.out = length(tmp3$gene))
+tmp3
+
+tmp4 <- unique(rna_dna[gene %in% unique(g4$gene) &
+                         reg == "Promoter",
+                       c("gene",
+                         "reg",
+                         "TIIA-HG")])
+setkey(tmp4,
+       `TIIA-HG`)
+tmp4$ypos <- seq(from = min(rna_dna$`TIIA-HG`), 
+                 to = max(rna_dna$`TIIA-HG`), 
+                 length.out = length(tmp4$gene))
+tmp4
+
+rna_dna$a <- 0.7
+rna_dna$a[rna_dna$`TIIA-HG DNA` > -10 & 
+            rna_dna$`TIIA-HG DNA` < 10] <- 0.3
+
 p2 <- ggplot(data = rna_dna,
              aes(x = `TIIA-HG DNA`,
                  y = `TIIA-HG`,
                  fill = reg)) +
-  geom_point(alpha = 0.7,
-             size = 2,
-             shape = 21) +
-  geom_text(data = unique(rna_dna[gene %in% unique(g3$gene) &
-                                    reg == "Promoter", 
-                                  c("gene",
-                                    "reg",
-                                    "TIIA-HG")]),
-            aes(x = 40,
-                y = `TIIA-HG`,
+  geom_segment(data = tmp3,
+               aes(x = -35,
+                   y = `TIIA-HG`,
+                   xend = 25,
+                   yend = `TIIA-HG`),
+               linetype = "dotted") +
+  geom_segment(data = tmp3,
+               aes(x = 25,
+                   y = `TIIA-HG`,
+                   xend = 35,
+                   yend = ypos)) +
+  geom_text(data = tmp3,
+            aes(x = 35,
+                y = ypos,
                 label = gene),
-            color = "blue",
-            size = 2) +
-  geom_text(data = unique(rna_dna[gene %in% unique(g4$gene) &
-                                    reg == "Promoter", 
-                                  c("gene",
-                                    "reg",
-                                    "TIIA-HG")]),
-            aes(x = -40,
-                y = `TIIA-HG`,
+            size = 4,
+            hjust = 0) +
+  geom_segment(data = tmp4,
+               aes(x = -35,
+                   y = `TIIA-HG`,
+                   xend = 25,
+                   yend = `TIIA-HG`),
+               linetype = "dotted") +
+  geom_segment(data = tmp4,
+               aes(x = -45,
+                   y = ypos,
+                   xend = -35,
+                   yend = `TIIA-HG`)) +
+  geom_text(data = tmp4,
+            aes(x = -45,
+                y = ypos,
                 label = gene),
-            color = "blue",
-            size = 2) +
+            size = 4,
+            hjust = 1) +
   geom_hline(yintercept = c(-0.3, 0.3),
              linetype = "dashed") +
   geom_vline(xintercept = c(-10, 10),
              linetype = "dashed") +
+  geom_point(aes(alpha = a),
+             size = 2,
+             shape = 21) +
   scale_x_continuous("DNA Methylation Difference(%)",
-                     breaks = seq(-30, 30, 10)) +
+                     breaks = seq(-35, 35, 10),
+                     limits = c(-50, 45)) +
   scale_y_continuous("RNA Expression Difference (log2)") +
-  ggtitle("TIIA-HG") +
+  ggtitle("TIIA - HG") +
   scale_fill_manual("Region",
                     values = c("Promoter" = "green",
                                "5' UTR" = "white",
                                "Body" = "blue",
                                "3' UTR" = "grey",
                                "Downstream" = "red")) +
-  theme(plot.title = element_text(hjust = 0.5))
+  scale_alpha_continuous(guide = FALSE) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "top",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"))
 p2
 tiff(filename = "tmp/starburst_tiia-hg.tiff",
-     height = 10,
-     width = 10,
+     height = 8,
+     width = 8,
      units = 'in',
      res = 300,
      compression = "lzw+p")
@@ -662,7 +725,7 @@ dt3
 
 # Isolate genes----
 for (i in 1:length(unique(dna$gene))) {
-  gX <- unique(dt3$gene)[i]
+  gX <- unique(dt3$gene)
   dna.gX <- dt3[dt3$gene %in% gX, ]
   dna.gX$y0 <- 0
   
@@ -675,9 +738,9 @@ for (i in 1:length(unique(dna$gene))) {
   p1 <- ggplot(dna.gX,
                aes(x = distRank,
                    y = DNA)) +
-    facet_wrap(.~ Treatment,
-               scales = "free_y",
-               ncol = 1) +
+    facet_wrap(.~ Treatment + gene,
+               # scales = "free_y",
+               ncol = 2) +
     geom_rect(aes(xmin = -Inf,
                   xmax = Inf,
                   ymin = -Inf,
