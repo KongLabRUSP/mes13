@@ -274,8 +274,11 @@ for (i in 1:ncol(t1)) {
 names(mu) <- unique(substr(colnames(t1),
                            1,
                            4))
-mu
-# more than 13
+t2 <- data.table(Region = mu$WJ01$reg,
+                 LG = mu$WJ01$mu,
+                 HG = mu$WJ02$mu,
+                 TIIA = mu$WJ04$mu)
+t2
 
 # Average methylation per region per treatment/time
 mumth <- list()
