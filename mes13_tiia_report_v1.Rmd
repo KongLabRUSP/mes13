@@ -7,7 +7,6 @@ output:
     theme: united
     toc: TRUE
     toc_float: TRUE
-    df_print: paged
     code_folding: hide
 ---
 Last Run: `r date()`  
@@ -21,14 +20,14 @@ Wenji Li^a,b,c^, Davit Sargsyan^c,d,e^, Renyi Wu^c,d^, Shanyi Li^c,d^, Lujing Wa
 ^e^ Graduate Program in Pharmaceutical Sciences, Ernest Mario School of Pharmacy, The State University of New Jersey, Piscataway, NJ 08854, USA          
 
 # Setup
-```{r setup,echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
-knitr::opts_chunk$set(
-	echo = FALSE,
-	message = FALSE,
-	warning = FALSE,
-	message = FALSE
-)
-
+```{r setup}
+# knitr::opts_chunk$set(
+# 	echo = FALSE,
+# 	message = FALSE,
+# 	warning = FALSE,
+# 	message = FALSE
+# )
+# install.packages("BiocManager")
 # BiocManager::install("package.name")
 
 require(knitr)
@@ -49,7 +48,7 @@ require(DSS)
 
 # RNA-seq
 ## Load RNA Data
-```{r data_rna, paged.print=TRUE}
+```{r data_rna}
 # Treatment legend----
 trt.names <- c("LG",
                "HG",
@@ -644,7 +643,7 @@ tiff(filename = "tmp/mes13_CpG_by_reg_hist.tiff",
      height = 6,
      width = 9,
      units = 'in',
-     res = 1200,
+     res = 600,
      compression = "lzw+p")
 print(p2)
 graphics.off()
@@ -772,9 +771,6 @@ mumth <- do.call("rbind",
                  mumth)
 
 mumth$trt <- factor(mumth$trt,
-                    # levels = c("WJ02",
-                    #            "WJ01",
-                    #            "WJ05"),
                     levels = c("WJ02",
                                "WJ01",
                                "WJ04"),
@@ -805,7 +801,7 @@ tiff(filename = "tmp/mes13_avg_methyl_by_reg.tiff",
      height = 6,
      width = 7,
      units = 'in',
-     res = 1200,
+     res = 600,
      compression = "lzw+p")
 print(p3)
 graphics.off()
@@ -895,6 +891,124 @@ write.csv(g3,
 write.csv(g4,
           file = "tmp/dna.dn_rna.up_tiia-hg.csv",
           row.names = FALSE)
+```
+## Methylation Heatmap (61 Target Genes)
+```{r methyl_heatmap, fig.height = 8, fig.width = 8}
+# HG- LG
+## Hypermethylated/downregulated
+# g1
+## Hypomethylated/upregulated
+# g2
+
+# TIIA - HG
+## Hypermethylated/downregulated
+# g3
+## Hypomethylated/upregulated
+# g4
+
+# All data
+genes.keep <- unique(c(g1$gene,
+                       g2$gene,
+                       g3$gene,
+                       g4$gene))
+
+# length(genes.keep)
+# 65
+# length(unique(rna_dna$gene))
+# 191
+
+ddt <- rna_dna[gene %in% genes.keep, ]
+
+ddt[, LG := 100*mean(WJ01,
+                     na.rm = TRUE), 
+    by = c("gene",
+           "reg")]
+ddt[, HG := 100*mean(WJ02,
+                     na.rm = TRUE), 
+    by = c("gene",
+           "reg")]
+ddt[, TIIA := 100*mean(WJ04,
+                       na.rm = TRUE), 
+    by = c("gene",
+           "reg")]
+
+ddt2 <- unique(ddt[, c("gene",
+                       "reg",
+                       "LG",
+                       "HG",
+                       "TIIA")])
+
+ddt3 <- melt.data.table(data = ddt2,
+                        id.vars = 1:2,
+                        measure.vars = 3:5,
+                        variable.name = "grp",
+                        value.name = "mu")
+
+p1 <- ggplot(data = ddt3) +
+  facet_wrap(~ reg,
+             nrow = 1) +
+  geom_tile(aes(x =  grp,
+                y = gene,
+                fill = mu),
+            color = "black") +
+  scale_fill_gradient2(low = "white", 
+                       high = "red", 
+                       limit = c(0, 100), 
+                       name = "% Methylation") +
+  scale_x_discrete("",
+                   expand = c(0, 0)) + 
+  scale_y_discrete("",
+                   expand = c(0, 0)) +
+  theme(axis.text.x = element_text(angle = 45,
+                                   hjust = 1),
+        # legend.position = "top",
+        plot.title = element_text(hjust = 0.5))
+
+tiff(filename = "tmp/mes13_gene_methyl.tiff",
+     height = 8,
+     width = 8,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p1)
+graphics.off()
+
+print(p1)
+```
+
+```{r methyl_heatmap_no_5p_3p, fig.height = 8, fig.width = 7}
+tmp <- droplevels(ddt3[!(reg %in% c("5' UTR",
+                                    "3' UTR")), ])
+p2 <- ggplot(data = tmp) +
+  facet_wrap(~ reg,
+             nrow = 1) +
+  geom_tile(aes(x =  grp,
+                y = gene,
+                fill = mu),
+            color = "black") +
+  scale_fill_gradient2(low = "white", 
+                       high = "red", 
+                       limit = c(0, 100), 
+                       name = "% Methylation") +
+  scale_x_discrete("",
+                   expand = c(0, 0)) + 
+  scale_y_discrete("",
+                   expand = c(0, 0)) +
+  theme(axis.text.x = element_text(angle = 45,
+                                   hjust = 1),
+        # legend.position = "top",
+        plot.title = element_text(hjust = 0.5))
+
+tiff(filename = "tmp/mes13_gene_methyl_no_5p_3p.tiff",
+     height = 8,
+     width = 7,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p2)
+graphics.off()
+
+print(p2)
 ```
 ## HG vs. LG Starburst
 ```{r starburst_hg_lg, fig.height = 8, fig.width = 8}
@@ -994,7 +1108,7 @@ tiff(filename = "tmp/starburst_hg-lg.tiff",
      height = 8,
      width = 8,
      units = 'in',
-     res = 300,
+     res = 600,
      compression = "lzw+p")
 print(p1)
 graphics.off()
@@ -1100,7 +1214,7 @@ tiff(filename = "tmp/starburst_tiia-hg.tiff",
      height = 8,
      width = 8,
      units = 'in',
-     res = 300,
+     res = 600,
      compression = "lzw+p")
 print(p2)
 graphics.off()
