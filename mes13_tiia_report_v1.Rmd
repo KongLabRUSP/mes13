@@ -17,7 +17,7 @@ Wenji Li^a,b,c^, Davit Sargsyan^c,d,e^, Renyi Wu^c,d^, Shanyi Li^c,d^, Lujing Wa
 ^b^ Jiangsu Key laboratory of integrated traditional Chinese and Western Medicine for prevention and treatment of Senile Diseases, Yangzhou University, Yangzhou, 225001, PR China    
 ^c^ Department of Pharmaceutics, Ernest Mario School of Pharmacy, Rutgers, The State University of New Jersey, 160 Frelinghuysen Road, Piscataway, NJ 08854, USA     
 ^d^ Center for Phytochemical Epigenome Studies, Ernest Mario School of Pharmacy, The State University of New Jersey, Piscataway, NJ 08854, USA          
-^e^ Graduate Program in Pharmaceutical Sciences, Ernest Mario School of Pharmacy, The State University of New Jersey, Piscataway, NJ 08854, USA          
+^e^ Graduate Program in Pharmaceutical Sciences, Ernest Mario School of Pharmacy, The State University of New Jersey, Piscataway, NJ 08854, USA           
 
 # Setup
 ```{r setup}
