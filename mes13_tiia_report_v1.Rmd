@@ -313,16 +313,16 @@ p1 <- ggplot() +
             size = 7) +
   geom_text(aes(x = c(1, 2, 1, 2),
                 y = c(2.3, 2.3, 5.3, 5.3),
-                label = c("HG vs. LG\n(263)",
-                          "TIIA vs. HG\n(1,393)",
-                          "HG vs. LG\n(207)",
-                          "TIIA vs. HG\n(1,120)"),
+                label = c("HG vs. LG\n(207)",
+                          "TIIA vs. HG\n(1,120)",
+                          "HG vs. LG\n(263)",
+                          "TIIA vs. HG\n(1,393)"),
                 color = factor(c(2, 1, 1, 2))),
             size = 7) +
   geom_text(aes(x = c(3.25, 3.25),
                 y = c(1.1, 4.1),
-                label = c("1,532",
-                          "1,238")),
+                label = c("1,238",
+                          "1,532")),
             size = 7) +
   scale_x_continuous(limits = c(0, 4)) +
   scale_color_manual(values = c("green", "red")) +
