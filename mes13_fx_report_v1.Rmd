@@ -1,0 +1,1463 @@
+---
+title: "DNA methylome and transcriptome alterations in a high-glucose induced diabetic nephropathy cellular model and identification of novel targets for treatment by FX"
+output:
+  html_notebook:
+    number_sections: yes
+    toc: TRUE
+    toc_float: TRUE
+    code_folding: hide
+---
+Last Run: `r date()`  
+    
+Rasika Hudlikar^c^, Wenji Li^a,b,c^, Davit Sargsyan^c,d,e^, Renyi Wu^c,d^, Shanyi Li^c,d^, Lujing Wang^c,d,e^, Ah-Ng Kong^c,d^  
+    
+^a^ Institute of Translational Medicine, Medical College, Yangzhou University, Yangzhou, 225001, PR China    
+^b^ Jiangsu Key laboratory of integrated traditional Chinese and Western Medicine for prevention and treatment of Senile Diseases, Yangzhou University, Yangzhou, 225001, PR China    
+^c^ Department of Pharmaceutics, Ernest Mario School of Pharmacy, Rutgers, The State University of New Jersey, 160 Frelinghuysen Road, Piscataway, NJ 08854, USA     
+^d^ Center for Phytochemical Epigenome Studies, Ernest Mario School of Pharmacy, The State University of New Jersey, Piscataway, NJ 08854, USA          
+^e^ Graduate Program in Pharmaceutical Sciences, Ernest Mario School of Pharmacy, The State University of New Jersey, Piscataway, NJ 08854, USA           
+
+# Setup
+```{r setup}
+# knitr::opts_chunk$set(
+# 	echo = FALSE,
+# 	message = FALSE,
+# 	warning = FALSE,
+# 	message = FALSE
+# )
+# install.packages("BiocManager")
+# BiocManager::install("package.name")
+
+require(knitr)
+require(data.table)
+require(DT)
+require(ggplot2)
+require(ggdendro) 
+require(ggforce)
+require(gridExtra)
+
+require(DESeq2)
+require(DEGseq)
+require(ChIPseeker)
+require(org.Mm.eg.db)
+require(TxDb.Mmusculus.UCSC.mm10.knownGene)
+require(DSS)
+```
+
+# RNA-seq
+## Load RNA Data
+```{r data_rna}
+# Treatment legend----
+trt.names <- c("LG",
+               "HG",
+               "MIC_1.5uM",
+               "TIIA_5uM", # NOTE: corrected from "FX_1uM" on 05/25/2020!
+               "FX_1uM",
+               "Gen_10uM",
+               "Ber_6uM")
+
+# Load data----
+dt1 <- fread("data/Renyi_RNAseq_12292017/mes13_featurecounts_Dec2017_david.csv")
+
+# Keep only gene IDs and counts
+dt1 <- dt1[, c("Geneid",
+               "WJ1.dedup.bam",
+               "WJ2.dedup.bam",
+               "WJ3.dedup.bam",
+               "WJ4.dedup.bam",
+               "WJ5.dedup.bam",
+               "WJ6.dedup.bam",
+               "WJ7.dedup.bam")]
+colnames(dt1) <- c("GeneNames",
+                   trt.names)
+
+nrow.raw <- nrow(dt1)
+datatable(head(dt1))
+```
+
+## Keep only LG, HG and FX samples
+```{r samples}
+dt1 <- droplevels(dt1[, c("GeneNames",
+                          "LG",
+                          "HG",
+                          "FX_1uM")])
+datatable(head(dt1))
+```
+
+## Remove genes with low counts
+```{r remove_low_counts}
+tmp <- rowSums(dt1[, -1])
+# Remove if total across 3 samples is no more than 10
+dt1 <- droplevels(subset(dt1,
+                         tmp > 15))
+print(paste(nrow(dt1),
+            "genes left, down from",
+            nrow.raw))
+
+datatable(head(dt1))
+```
+
+## Normalize to Fragments per Million (FPM)
+```{r norm_fpm}
+mat <- data.frame(sample = colnames(dt1)[-1],
+                  trt = colnames(dt1)[-1],
+                  repl = factor(rep(1, ncol(dt1) - 1)))
+datatable(mat)
+
+dtm <- as.matrix(dt1[, -1, with = FALSE])
+rownames(dtm) <- dt1$GeneNames
+datatable(head(dtm,
+               10))
+
+dds <- DESeqDataSetFromMatrix(countData = dtm, 
+                              colData = mat,
+                              ~ trt)
+dds <- estimateSizeFactors(dds)
+dds
+
+# Fragments per million (FPM) normalization----
+dt1.fpm <- data.table(GeneNames = dt1$GeneNames,
+                      fpm(dds,
+                          robust = FALSE))
+colnames(dt1.fpm)[-1] <- paste(colnames(dt1.fpm)[-1],
+                               "fpm",
+                               sep = "_")
+datatable(head(dt1.fpm, 
+               10),
+          caption = "Tabler",
+          rownames = FALSE,
+          class = "cell-border stripe",
+          options = list(searching = TRUE,
+                         pageLength = 10))%>% 
+  formatCurrency(columns = 1:ncol(dt1.fpm),
+                 currency = "",
+                 digits = 2)
+```
+
+## Differential Expressions
+### HG - LG
+```{r degseq_hg_lg, fig.height = 6, fig.width = 6}
+DEGexp(geneExpMatrix1 = dt1,
+       geneCol1 = which(colnames(dt1) == "GeneNames"), 
+       expCol1 = which(colnames(dt1) == "HG"), 
+       groupLabel1 = "HG",
+       
+       geneExpMatrix2 = dt1,
+       geneCol2 = which(colnames(dt1) == "GeneNames"), 
+       expCol2 = which(colnames(dt1) == "LG"),
+       groupLabel2 = "LG",
+       
+       foldChange = 2^0.3,
+       qValue = 0.5,
+       thresholdKind = 5, 
+       rawCount = TRUE,
+       normalMethod = "none",
+       method = "MARS",
+       outputDir = "tmp/hg_lg")
+
+hg_lg <- fread("tmp/hg_lg/output_score.txt")
+hg_lg
+
+# Write as CSV----
+write.csv(hg_lg,
+          file = "tmp/hg_lg/MES13_RNA_DEGseq_HG-LG.csv",
+          row.names = FALSE)
+
+# MA Plot----
+hg_lg <- merge(hg_lg,
+               dt1.fpm,
+               by = "GeneNames")
+hg_lg[, mu := (log2(HG_fpm + 1) + log2(LG_fpm + 1))/2]
+hg_lg[, diff := log2(HG_fpm + 1) - log2(LG_fpm + 1)]
+
+# NOTE: MAKE THIS A VOLCANO PLOT!
+tiff(filename = "tmp/hg_lg/fig1a_mes13_hg_lg_maplot.tiff",
+     height = 6,
+     width = 6,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+plot(hg_lg$diff ~ hg_lg$mu,
+     pch = ".",
+     xlab = "Mean",
+     ylab = "Difference",
+     # ylim = c(-3.2, 3.2),
+     main = "MES13 FPM-Normalized Gene Expressions\nHG-LG, FDR < 0.5")
+points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff > 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff > 0] ,
+       pch = "x",
+       col = "green")
+points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff < 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff < 0] ,
+       pch = "x",
+       col = "red")
+abline(h = c(-0.3, 0.3),
+       lty = 2)
+graphics.off()
+
+plot(hg_lg$diff ~ hg_lg$mu,
+     pch = ".",
+     xlab = "Mean",
+     ylab = "Difference",
+     # ylim = c(-3.2, 3.2),
+     main = "MES13 FPM-Normalized Gene Expressions\nHG-LG, FDR < 0.5")
+points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff > 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff > 0] ,
+       pch = "x",
+       col = "green")
+points(hg_lg$diff[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff < 0] ~ hg_lg$mu[hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff < 0] ,
+       pch = "x",
+       col = "red")
+abline(h = c(-0.3, 0.3),
+       lty = 2)
+```
+
+### FX - HG
+```{r degseq_fx_hg, fig.height = 6, fig.width = 6}
+DEGexp(
+  geneExpMatrix1 = dt1,
+  geneCol1 = which(colnames(dt1) == "GeneNames"),
+  expCol1 = which(colnames(dt1) == "FX_1uM"),
+  groupLabel1 = "FX_1uM",
+  
+  geneExpMatrix2 = dt1,
+  geneCol2 = which(colnames(dt1) == "GeneNames"),
+  expCol2 = which(colnames(dt1) == "HG"),
+  groupLabel2 = "HG",
+  
+  foldChange = 2 ^ 0.3,
+  qValue = 0.5,
+  thresholdKind = 5,
+  rawCount = TRUE,
+  normalMethod = "none",
+  method = "MARS",
+  outputDir = "tmp/fx_hg"
+)
+
+fx_hg <- fread("tmp/fx_hg/output_score.txt")
+fx_hg
+
+# Write as CSV----
+write.csv(fx_hg,
+          file = "tmp/fx_hg/MES13_RNA_DEGseq_FX-HG.csv",
+          row.names = FALSE)
+
+# MA Plot----
+fx_hg <- merge(fx_hg,
+               dt1.fpm,
+               by = "GeneNames")
+fx_hg[, mu := (log2(FX_1uM_fpm + 1) + log2(HG_fpm + 1)) / 2]
+fx_hg[, diff := log2(FX_1uM_fpm + 1) - log2(HG_fpm + 1)]
+
+tiff(
+  filename = "tmp/fx_hg/fig1b_mes13_fx_hg_maplot.tiff",
+  height = 6,
+  width = 6,
+  units = 'in',
+  res = 600,
+  compression = "lzw+p"
+)
+plot(
+  fx_hg$diff ~ fx_hg$mu,
+  pch = ".",
+  xlab = "Mean",
+  ylab = "Difference",
+  ylim = c(-3.2, 3.2),
+  main = "MES13 FPM-Normalized Gene Expressions\nFX-HG, FDR < 0.5"
+)
+points(fx_hg$diff[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
+                    fx_hg$diff > 0] ~ fx_hg$mu[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
+                                                 fx_hg$diff > 0] ,
+       pch = "x",
+       col = "green")
+points(fx_hg$diff[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
+                    fx_hg$diff < 0] ~ fx_hg$mu[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
+                                                 fx_hg$diff < 0] ,
+       pch = "x",
+       col = "red")
+abline(h = c(-0.3, 0.3),
+       lty = 2)
+graphics.off()
+
+plot(
+  fx_hg$diff ~ fx_hg$mu,
+  pch = ".",
+  xlab = "Mean",
+  ylab = "Difference",
+  ylim = c(-3.2, 3.2),
+  main = "MES13 FPM-Normalized Gene Expressions\nFX-HG, FDR < 0.5"
+)
+points(fx_hg$diff[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
+                    fx_hg$diff > 0] ~ fx_hg$mu[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
+                                                 fx_hg$diff > 0] ,
+       pch = "x",
+       col = "green")
+points(fx_hg$diff[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
+                    fx_hg$diff < 0] ~ fx_hg$mu[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
+                                                 fx_hg$diff < 0] ,
+       pch = "x",
+       col = "red")
+abline(h = c(-0.3, 0.3),
+       lty = 2)
+```
+
+## FIGURE 3: combine th etwo MA plots
+```{r ma_plot, fig.height = 4, fig.width = 7}
+dt.ma <- rbindlist(list(data.table(comp = "HG - LG",
+                                   mu = hg_lg$mu,
+                                   diff = hg_lg$diff,
+                                   up = hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff > 0,
+                                   dn = hg_lg$`q-value(Storey et al. 2003)` < 0.5 & hg_lg$diff < 0),
+                        data.table(comp = "FX - HG",
+                                   mu = fx_hg$mu,
+                                   diff = fx_hg$diff,
+                                   up = fx_hg$`q-value(Storey et al. 2003)` < 0.5 & fx_hg$diff > 0,
+                                   dn = fx_hg$`q-value(Storey et al. 2003)` < 0.5 & fx_hg$diff < 0)))
+dt.ma$comp <- factor(dt.ma$comp,
+                     levels = c("HG - LG",
+                                "FX - HG"))
+dt.ma$col <- 1
+dt.ma$col[dt.ma$up] <- 2
+dt.ma$col[dt.ma$dn] <- 3
+dt.ma$col <- factor(dt.ma$col)
+
+p1 <- ggplot(dt.ma,
+             aes(x = mu,
+                 y = diff,
+                 colour = col)) +
+  facet_wrap(~ comp) +
+  geom_point(size = 1) +
+  geom_hline(yintercept = c(-0.3, 0.3),
+             linetype = "dashed") +
+  scale_x_continuous("Mean Log2(FPM + 1)") +
+  scale_y_continuous("Difference Log2(FPM + 1)") +
+  scale_color_manual(breaks = 1:3, 
+                     values = c("grey",
+                                "green",
+                                "red")) +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+tiff(filename = "tmp/fig3_mes13_fx_hg_maplot.tiff",
+     height = 4,
+     width = 7,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p1)
+graphics.off()
+
+p1
+```
+
+## Venn Diagramms
+```{r venn, fig.height = 10, fig.width = 8}
+g1 <- hg_lg[`q-value(Storey et al. 2003)` < 0.5 & 
+              `log2(Fold_change) normalized` > 0.3,]$GeneNames
+g2 <- hg_lg[`q-value(Storey et al. 2003)` < 0.5 & 
+              `log2(Fold_change) normalized` < -0.3,]$GeneNames
+g3 <- fx_hg[`q-value(Storey et al. 2003)` < 0.5 & 
+              `log2(Fold_change) normalized` > 0.3,]$GeneNames
+g4 <- fx_hg[`q-value(Storey et al. 2003)` < 0.5 & 
+              `log2(Fold_change) normalized` < -0.3,]$GeneNames
+
+up.dn <- g1[g1 %in% g4]
+dn.up <- g2[g2 %in% g3]
+
+p1 <- ggplot() +
+  geom_circle(aes(x0 = c(1, 2, 1, 2),
+                  y0 = c(1, 1, 4, 4),
+                  r = rep(1, 4),
+                  # color = factor(c(2, 1, 1, 2)),
+                  fill = factor(c(2, 1, 1, 2))),
+              size = 2,
+              alpha = 0.3) +
+  geom_text(aes(x = rep(c(0.5, 1.5, 2.5), 2),
+                y = rep(c(1.1, 4.1), each = 3),
+                label = format(c(length(g2) - length(dn.up), 
+                                 length(dn.up), 
+                                 length(g3) - length(dn.up),
+                                 length(g1) - length(up.dn), 
+                                 length(up.dn), 
+                                 length(g4) - length(up.dn)),
+                               big.mark = ",")),
+            size = 7) +
+  geom_text(aes(x = c(1, 2, 1, 2),
+                y = c(2.3, 2.3, 5.3, 5.3),
+                # color = factor(c(2, 1, 1, 2)),
+                label = c(paste0("HG - LG\n(", length(g2), ")"),
+                          paste0("FX - HG\n(", length(g3), ")"),
+                          paste0("HG - HG\n(", length(g4), ")"),
+                          paste0("FX - HG\n(", length(g4), ")"))),
+            size = 7) +
+  geom_text(aes(x = c(3.25, 3.25),
+                y = c(1.1, 4.1),
+                label = c(length(g2) + length(g3) - length(dn.up),
+                          length(g1) + length(g4) - length(up.dn))),
+            size = 7) +
+  scale_x_continuous(limits = c(0, 4)) +
+  # scale_color_manual(values = c("green", "red")) +
+  scale_fill_manual(values = c("green", "red")) +
+  theme_void() +
+  theme(legend.position = "none")
+
+print(p1)
+```
+
+## Heatmap
+```{r heatmap, fig.height = 12, fig.width = 12}
+ll <- unique(c(up.dn,
+               dn.up))
+
+t1 <- merge(hg_lg[hg_lg$GeneNames %in% ll, 
+                  c("GeneNames",
+                    "log2(Fold_change) normalized")],
+            fx_hg[fx_hg$GeneNames %in% ll, 
+                    c("GeneNames",
+                      "log2(Fold_change) normalized")],
+            by = "GeneNames")
+colnames(t1) <- c("Gene",
+                  "HG-LG",
+                  "FX-HG")
+t1 <- t1[order(t1$`HG-LG`,
+               decreasing = TRUE), ]
+
+write.csv(t1,
+          file = "tmp/mes13_fx_rnaseq_degseq_genes_q-0.5_log2-0.3.csv",
+          row.names = FALSE)
+
+ll <- melt.data.table(data = t1,
+                      id.vars = 1,
+                      measure.vars = 2:3,
+                      variable.name = "Comparison",
+                      value.name = "Gene Expression Diff")
+ll$Comparison <- factor(ll$Comparison,
+                        levels = c("FX-HG", 
+                                   "HG-LG"))
+lvls <- ll[ll$Comparison == "HG-LG", ]
+ll$Gene <- factor(ll$Gene,
+                  levels = lvls$Gene[order(lvls$`Gene Expression Diff`)])
+
+# Add dendrogram----
+# Sources: 
+# https://stackoverflow.com/questions/43794870/plotting-a-clustered-heatmap-with-dendrograms-using-rs-plotly
+# https://stats.stackexchange.com/questions/4062/how-to-plot-a-fan-polar-dendrogram-in-r
+# https://cran.r-project.org/web/packages/ggdendro/vignettes/ggdendro.html
+# http://www.sthda.com/english/wiki/beautiful-dendrogram-visualizations-in-r-5-must-known-methods-unsupervised-machine-learning
+dt.dndr <- data.frame(t1[Gene %in% levels(ll$Gene), ])
+rownames(dt.dndr) <- dt.dndr$Gene
+dt.dndr <- dt.dndr[, -1]
+
+# Compute distances between genes----
+sampleDists <- dist(dt.dndr)
+# Make dendrogram data----
+dhc <- as.dendrogram(hclust(d = sampleDists),
+                     horiz = TRUE)
+ddata <- dendro_data(dhc, 
+                     type = "rectangle")
+
+# Segment data----
+dtp1 <- segment(ddata)
+
+# Hitmap data----
+dtp2 <- ll
+dtp2$Gene <- factor(dtp2$Gene,
+                    levels = ddata$labels$label)
+offset.size <- 10
+
+p2 <- ggplot(data = dtp2) +
+  coord_polar("y",
+              start = 0,
+              direction = -1) +
+  geom_tile(aes(x =  as.numeric(Comparison),
+                y = Gene, 
+                fill = `Gene Expression Diff`),
+            color = "white") +
+  # geom_text(data = dtp2[Comparison == "HG-LG", ],
+  #           aes(x = rep(2.25,
+  #                       nlevels(Gene)),
+  #               y = Gene,
+  #               angle = 90 + seq(from = 0,
+  #                                to = 360,
+  #                                length.out = nlevels(Gene))[as.numeric(Gene)] +
+  #                 offset.size,
+  #               label = 1:nlevels(Gene)),
+  #           hjust = 0,
+  #           size = 6) +
+geom_text(data = dtp2[Comparison == "HG-LG", ],
+          aes(x = rep(1.75,
+                      nlevels(Gene)),
+              y = Gene,
+              angle = 90 + seq(from = 10,
+                               to = 350,
+                               length.out = nlevels(Gene))[as.numeric(Gene)] + 
+                offset.size,
+              label = unique(Gene)),
+          hjust = 0) +
+  geom_text(data = dtp2[Gene == levels(dtp2$Gene)[1], ],
+            aes(x = 1:nlevels(Comparison),
+                y = rep(-offset.size,
+                        nlevels(Comparison)),
+                angle = 0,
+                label = levels(Comparison)),
+            hjust = 1,
+            size = 8) +
+  scale_fill_gradient2(low = "red", 
+                       high = "green", 
+                       mid = "grey", 
+                       midpoint = 0, 
+                       name = "") +
+  scale_y_discrete("",
+                   expand = c(0, 0)) +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.background = element_blank(),
+        legend.position = "bottom",
+        legend.text = element_text(size = 25),
+        legend.direction = "horizontal",
+        legend.key.width = unit(1.5, "in"),
+        legend.key.height = unit(0.5, "in")) +
+  geom_segment(data = dtp1,
+               aes(x = -sqrt(y) + 0.5,
+                   y = x, 
+                   xend = -sqrt(yend) + 0.5,
+                   yend = xend),
+               size = 1) 
+
+print(p2)
+```
+
+## FIGURE 4: Heatmap and Venn Diagram
+```{r heatmap-venn, fig.height = 10, fig.width = 18}
+# # Blank canvas
+# p3 <- ggplot() + theme_void()
+
+tiff(filename = "tmp/fig4_mes13_fx_hitmap_with_phylo_and_venn.tiff",
+     height = 10,
+     width = 18,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(grid.arrange(p2, 
+                   p1,
+                   # arrangeGrob(p3, p1, p3,
+                   #             ncol = 1,
+                   #             heights = c(1, 8, 1)), 
+                   nrow = 1, 
+                   heights = 10, 
+                   widths = c(10, 8)))
+graphics.off()
+
+print(grid.arrange(p2, 
+                   p1,
+                   nrow = 1, 
+                   heights = 10, 
+                   widths = c(10, 8)))
+```
+
+# Methyl-seq
+## Load DNA Data and Annotate
+```{r dna_data_anno, fig.height = 5, fig.width = 5}
+# Load and view raw counts (no annoation)----
+dt01 <- fread("data/Renyi_Methylseq_12292017/combined_WJ_anno.csv")
+datatable(head(dt01, 10))
+
+# Remove mitochondrial DNA ("chrM")
+unique(dt01$chr)
+# None found
+
+peakAnno1 <- annotatePeak(peak = "data/Renyi_Methylseq_12292017/combined_WJ_anno.csv", 
+                          tssRegion = c(-3000, 0), 
+                          TxDb = TxDb.Mmusculus.UCSC.mm10.knownGene,
+                          annoDb = "org.Mm.eg.db")
+
+datatable(head(peakAnno1@detailGenomicAnnotation, 10))
+
+t1 <- peakAnno1@annoStat
+t1$Feature <- factor(t1$Feature,
+                     levels = as.character(t1$Feature[order(t1$Frequency,
+                                                            decreasing = TRUE)]))
+p1 <- ggplot(t1,
+             aes(x = rep(1,
+                         nrow(t1)),
+                 y = Frequency,
+                 fill = Feature)) +
+  geom_bar(width = 1, 
+           stat = "identity",
+           color = "black") +
+  coord_polar("y",
+              start = 0,
+              direction = -1) +
+  scale_x_continuous("",
+                   limits = c(-1.5, 1.5),
+                   expand = c(0, 0)) + 
+  ggtitle("Annotation by Region (%)") +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+tiff(filename = "tmp/mes13_anno_by_reg.tiff",
+     height = 5,
+     width = 5,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p1)
+graphics.off()
+
+print(p1)
+```
+
+## CpG distribution and coverage
+```{r cpg_clusters, fig.height = 6, fig.width = 9}
+# Make data table----
+dt1 <- data.table(start = peakAnno1@anno@ranges@start,
+                  as.data.frame(peakAnno1@anno@elementMetadata@listData))
+
+# Remove unmapped regions
+dt1 <- dt1[!is.na(dt1$SYMBOL == "NA"), ]
+# Removed 12 rows
+
+# Subset data: LG, HG and FX----
+dt1 <- data.table(gene = dt1$SYMBOL,
+                  anno = dt1$annotation,
+                  geneId = dt1$geneId,
+                  chr = dt1$geneChr,
+                  pos = dt1$start,
+                  distanceToTSS = dt1$distanceToTSS,
+                  reg = NA,
+                  dt1[, CpG:WJ02.X],
+                  dt1[, WJ05.N:WJ05.X],
+                  geneName = dt1$GENENAME)
+
+# Separate Promoter, Body and Downstream----
+dt1$reg <- as.character(dt1$anno)
+
+# a. Promoter: up to 3kb upstream
+dt1$reg[substr(dt1$anno, 
+               1,
+               8) == "Promoter"] <- "Promoter"
+
+# b. Body: exons and introns
+dt1$reg[substr(dt1$anno, 
+               1, 
+               4) %in% c("Exon",
+                         "Intr")] <- "Body"
+
+# c. Downstream: Distal Intergenic and  Downstream
+dt1$reg[substr(dt1$anno,
+               1,
+               4) %in% c("Dist",
+                         "Down")] <- "Downstream"
+
+dt1$reg <- factor(dt1$reg,
+                  levels = c("Promoter",
+                             "5' UTR",
+                             "Body",
+                             "3' UTR",
+                             "Downstream"))
+datatable(data.table(table(dt1$reg)),
+          rownames = FALSE) %>%
+  formatCurrency(columns = 2,
+                 currency = "",
+                 mark = ",",
+                 digits = 0)
+
+# CpG distribution and coverage----
+p2 <- ggplot(dt1,
+             aes(x = CpG)) +
+  facet_wrap(~ reg,
+             scale = "free_y") +
+  geom_histogram(color = "black",
+                 fill = "grey",
+                 binwidth = 5) +
+  scale_x_continuous(name = "Number of CpG",
+                     breaks = c(3, 
+                                seq(from = 5,
+                                    to = 60,
+                                    by = 5))) +
+  coord_cartesian(xlim=c(3, 60)) +
+  scale_y_continuous(name = "Counts") +
+  ggtitle("Distribution of DMR by Number of CpG and Region")
+
+tiff(filename = "tmp/mes13_CpG_by_reg_hist.tiff",
+     height = 6,
+     width = 9,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p2)
+graphics.off()
+
+print(p2)
+```
+
+## Average Number of CpG Hits
+```{r cpg_counts}
+# Percent methylation----
+tmp <- as.matrix(dt1[, WJ01.N:WJ05.X])
+head(tmp)
+
+# Remove rows with all NAs
+ndx.keep <- rowSums(is.na(tmp)) < 6
+sum(ndx.keep)
+# 211,994out of 217,167
+
+dt1 <- dt1[ndx.keep, ]
+tmp <- tmp[ndx.keep, ]
+
+dtN <- tmp[, seq(1,
+                 ncol(tmp) - 1, 
+                 by = 2)]
+
+dtX <- tmp[, seq(2,
+                 ncol(tmp), 
+                 by = 2)]
+
+# Add 0.5 to all NAs and zeros in meth. hits
+# NOTE: if there were no hits (N = NA or 0), the pct will be NA anyway
+dtX <- apply(dtX,
+             2,
+             function(a) {
+               a[is.na(a)] <- a[a == 0] <- 0.5
+               return(a)
+             })
+
+pct <- dtX/dtN
+colnames(pct) <- substr(colnames(pct),
+                        1,
+                        nchar(colnames(pct)) - 2)
+
+# Remove rows with all zeros----
+dim(pct[rowSums(pct) == 0, ])
+dim(pct[is.na(rowSums(pct)), ])
+
+ndx.keep <- rowSums(pct) != 0 & !is.na(rowSums(pct))
+pct <- pct[ndx.keep, ]
+dt1 <- dt1[ndx.keep, ]
+dtN <- dtN[ndx.keep, ]
+dtX <- dtX[ndx.keep, ]
+# 187,601  remaine
+
+# Hits per CpG average (i.e. vertical coverage)----
+t1 <- apply(dtN,
+            2,
+            function(a) {
+              return(round(a/dt1$CpG,
+                           1))
+            })
+
+mu <- list()
+for (i in 1:ncol(t1)) {
+  x1 <- aggregate(x = t1[, i],
+                  FUN = mean,
+                  by = list(dt1$reg))
+  x2 <- aggregate(x = t1[, i],
+                  FUN = mean,
+                  by = list(dt1$reg))
+  x3 <- merge(x1, x2, by = "Group.1")
+  mu[[i]] <- data.table(reg = x3[, 1],
+                        mu = (x3[, 2] + x3[, 3])/2)
+}
+names(mu) <- unique(substr(colnames(t1),
+                           1,
+                           4))
+t2 <- data.table(Region = mu$WJ01$reg,
+                 LG = mu$WJ01$mu,
+                 HG = mu$WJ02$mu,
+                 FX = mu$WJ05$mu)
+datatable(t2,
+          rownames = FALSE) %>%
+  formatCurrency(columns = 2:4,
+                 currency = "",
+                 digits = 1)
+```
+
+## Average Methylation per Region/Treatment
+```{r avg_methyl, fig.height = 6, fig.width = 5}
+mumth <- list()
+for (i in 1:ncol(pct)) {
+  x1 <- aggregate(x = c(pct[, i],
+                        pct[, i]),
+                  FUN = mean,
+                  by = list(rep(dt1$reg, 2)))
+  
+  x2 <- aggregate(x = c(pct[, i],
+                        pct[, i]),
+                  FUN = sd,
+                  by = list(rep(dt1$reg, 2)))
+  x3 <- aggregate(x = c(pct[, i],
+                        pct[, i]),
+                  FUN = length,
+                  by = list(rep(dt1$reg, 2)))
+  tmp <- merge(x1, 
+               x2,
+               by = "Group.1")
+  tmp <- merge(tmp, 
+               x3,
+               by = "Group.1")
+  tmp$sem <- tmp$x.y/sqrt(tmp$x)
+  mumth[[i]] <- data.table(rep(colnames(pct)[[i]],
+                               5),
+                           tmp)
+  
+  colnames(mumth[[i]]) <- c("trt",
+                            "reg",
+                            "mu",
+                            "std",
+                            "n",
+                            "sem")
+}
+mumth <- do.call("rbind",
+                 mumth)
+
+mumth$trt <- factor(mumth$trt,
+                    levels = c("WJ02",
+                               "WJ01",
+                               "WJ05"),
+                    labels = c("HG",
+                               "LG",
+                               "FX"))
+
+mumth$`Methylation (%)` <- 100*mumth$mu
+mumth$`SEM (%)` <- 100*mumth$sem
+
+p3 <- ggplot(mumth,
+             aes(x = reg,
+                 y = `Methylation (%)`,
+                 group = trt,
+                 fill = trt)) +
+  geom_bar(position = position_dodge(),
+           stat="identity",
+           color = "black") +
+  scale_x_discrete("Region") +
+  scale_y_continuous(limits = c(0, 100)) +
+  scale_fill_discrete("Treatment") +
+  ggtitle("Percent of Methylated CpG by Region") +
+  theme(legend.position = "top",
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45,
+                                   hjust = 1))
+
+tiff(filename = "tmp/mes13_avg_methyl_by_reg.tiff",
+     height = 6,
+     width = 5,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p3)
+graphics.off()
+
+print(p3)
+```
+
+# DNA vs. RNA
+## Changes in Methylation Levels
+```{r dna_diff}
+pctMeth <- data.table(gene = dt1$gene,
+                      anno = dt1$anno,
+                      pct)
+pctMeth$`HG-LG DNA` <- 100*(pctMeth$WJ02 - pctMeth$WJ01)
+pctMeth$`FX-HG DNA` <- 100*(pctMeth$WJ05 - pctMeth$WJ02)
+datatable(head(pctMeth, 10)) %>%
+  formatCurrency(columns = 3:7,
+                 currency = "",
+                 digits = 3)
+```
+
+## Reload RNA Differential Expression Data
+```{r rna_diff}
+expRNA <- fread("data/mes13_fx_rnaseq_degseq_genes_q-0.5_log2-0.3.csv")
+colnames(expRNA)[1] <- "gene"
+
+rna_dna <- merge(pctMeth,
+                 expRNA,
+                 by = "gene")
+datatable(head(rna_dna, 10)) %>%
+  formatCurrency(columns = 3:9,
+                 currency = "",
+                 digits = 3)
+
+```
+
+## Separate regions
+```{r}
+rna_dna$reg <- as.character(rna_dna$anno)
+rna_dna$reg[substr(rna_dna$anno, 
+                   1,
+                   8) == "Promoter"] <- "Promoter"
+rna_dna$reg[substr(rna_dna$anno, 
+                   1, 
+                   4) %in% c("Exon",
+                             "Intr")] <- "Body"
+rna_dna$reg[substr(rna_dna$anno, 
+                   1, 
+                   4) %in% c("Dist",
+                             "Down")] <- "Downstream"
+rna_dna$reg <- factor(rna_dna$reg,
+                      levels = c("Promoter",
+                                 "5' UTR",
+                                 "Body",
+                                 "3' UTR",
+                                 "Downstream"))
+
+g1 <- rna_dna[rna_dna$`HG-LG DNA` >= 10 & 
+                rna_dna$`HG-LG` <= -0.3 &
+                reg == "Promoter"]
+length(unique(g1$gene))
+
+g2 <- rna_dna[rna_dna$`HG-LG DNA` <= -10 & 
+                rna_dna$`HG-LG` >= 0.3 &
+                reg == "Promoter"]
+length(unique(g2$gene))
+
+g3 <- rna_dna[rna_dna$`FX-HG DNA` >= 10 & 
+                rna_dna$`FX-HG` <= -0.3 &
+                reg == "Promoter"]
+length(unique(g3$gene))
+
+g4 <- rna_dna[rna_dna$`FX-HG DNA` <= -10 & 
+                rna_dna$`FX-HG` >= 0.3 &
+                reg == "Promoter"]
+length(unique(g4$gene))
+
+write.csv(g1,
+          file = "tmp/dna.up_rna.dn_hg-lg.csv",
+          row.names = FALSE)
+write.csv(g2,
+          file = "tmp/dna.dn_rna.up_hg-lg.csv",
+          row.names = FALSE)
+write.csv(g3,
+          file = "tmp/dna.up_rna.dn_fx-hg.csv",
+          row.names = FALSE)
+write.csv(g4,
+          file = "tmp/dna.dn_rna.up_fx-hg.csv",
+          row.names = FALSE)
+```
+
+## Methylation Heatmap
+```{r methyl_heatmap, fig.height = 8, fig.width = 8}
+# HG- LG
+## Hypermethylated/downregulated
+# g1
+## Hypomethylated/upregulated
+# g2
+
+# FX - HG
+## Hypermethylated/downregulated
+# g3
+## Hypomethylated/upregulated
+# g4
+
+# All data
+genes.keep <- unique(c(g1$gene,
+                       g2$gene,
+                       g3$gene,
+                       g4$gene))
+
+# length(genes.keep)
+# length(unique(rna_dna$gene))
+
+ddt <- rna_dna[gene %in% genes.keep, ]
+
+ddt[, LG := 100*mean(WJ01,
+                     na.rm = TRUE), 
+    by = c("gene",
+           "reg")]
+ddt[, HG := 100*mean(WJ02,
+                     na.rm = TRUE), 
+    by = c("gene",
+           "reg")]
+ddt[, FX := 100*mean(WJ05,
+                       na.rm = TRUE), 
+    by = c("gene",
+           "reg")]
+
+ddt2 <- unique(ddt[, c("gene",
+                       "reg",
+                       "LG",
+                       "HG",
+                       "FX")])
+
+ddt3 <- melt.data.table(data = ddt2,
+                        id.vars = 1:2,
+                        measure.vars = 3:5,
+                        variable.name = "grp",
+                        value.name = "mu")
+
+p1 <- ggplot(data = ddt3) +
+  facet_wrap(~ reg,
+             nrow = 1) +
+  geom_tile(aes(x =  grp,
+                y = gene,
+                fill = mu),
+            color = "black") +
+  scale_fill_gradient2(low = "white", 
+                       high = "red", 
+                       limit = c(0, 100), 
+                       name = "% Methylation") +
+  scale_x_discrete("",
+                   expand = c(0, 0)) + 
+  scale_y_discrete("",
+                   expand = c(0, 0)) +
+  theme(axis.text.x = element_text(angle = 45,
+                                   hjust = 1),
+        # legend.position = "top",
+        plot.title = element_text(hjust = 0.5))
+
+tiff(filename = "tmp/mes13_gene_methyl.tiff",
+     height = 8,
+     width = 8,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p1)
+graphics.off()
+
+print(p1)
+```
+
+```{r methyl_heatmap_no_5p_3p, fig.height = 6, fig.width = 5}
+tmp <- droplevels(ddt3[!(reg %in% c("5' UTR",
+                                    "3' UTR")), ])
+p2 <- ggplot(data = tmp) +
+  facet_wrap(~ reg,
+             nrow = 1) +
+  geom_tile(aes(x =  grp,
+                y = gene,
+                fill = mu),
+            color = "black") +
+  scale_fill_gradient2(low = "white", 
+                       high = "red", 
+                       limit = c(0, 100), 
+                       name = "% Methylation") +
+  scale_x_discrete("",
+                   expand = c(0, 0)) + 
+  scale_y_discrete("",
+                   expand = c(0, 0)) +
+  theme(axis.text.x = element_text(angle = 45,
+                                   hjust = 1),
+        # legend.position = "top",
+        plot.title = element_text(hjust = 0.5))
+
+tiff(filename = "tmp/fig7_mes13_gene_methyl_no_5p_3p.tiff",
+     height = 6,
+     width = 5,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p2)
+graphics.off()
+
+print(p2)
+```
+
+## HG vs. LG Starburst
+```{r starburst_hg_lg, fig.height = 5, fig.width = 7}
+tmp <- rna_dna[gene %in% unique(c(g1$gene,
+                                  g2$gene)), ]
+tmp$reg <- factor(tmp$reg,
+                  levels = rev(levels(tmp$reg)))
+
+tmp$a <- 0.7
+tmp$a[tmp$`HG-LG DNA` > -10 & 
+        tmp$`HG-LG DNA` < 10] <- 0.3
+
+range(tmp$`HG-LG DNA`)
+# -19.34548  36.95324
+
+range(tmp$`HG-LG`)
+# -3.0410657  0.6074619
+
+tmp1 <- unique(tmp[gene %in% unique(g1$gene) &
+                     reg == "Promoter",
+                   c("gene",
+                     "reg",
+                     "HG-LG")])
+setkey(tmp1,
+       `HG-LG`)
+tmp1$ypos <- seq(from = min(tmp$`HG-LG`), 
+                 to = max(tmp$`HG-LG`), 
+                 length.out = length(tmp1$gene))
+
+tmp2 <- unique(rna_dna[gene %in% unique(g2$gene) &
+                         reg == "Promoter",
+                       c("gene",
+                         "reg",
+                         "HG-LG")])
+setkey(tmp2,
+       `HG-LG`)
+tmp2$ypos <- seq(from = min(tmp$`HG-LG`), 
+                 to = max(tmp$`HG-LG`), 
+                 length.out = length(tmp2$gene))
+
+p1 <- ggplot(data = tmp,
+             aes(x = `HG-LG DNA`,
+                 y = `HG-LG`,
+                 fill = reg)) +
+  geom_segment(data = tmp1,
+               aes(x = -20,
+                   y = `HG-LG`,
+                   xend = 40,
+                   yend = `HG-LG`),
+               linetype = "dotted") +
+  geom_segment(data = tmp1,
+               aes(x = 40,
+                   y = `HG-LG`,
+                   xend = 50,
+                   yend = ypos)) +
+  geom_text(data = tmp1,
+            aes(x = 50,
+                y = ypos,
+                label = gene),
+            size = 4,
+            hjust = 0) +
+  geom_segment(data = tmp2,
+               aes(x = -20,
+                   y = `HG-LG`,
+                   xend = 40,
+                   yend = `HG-LG`),
+               linetype = "dotted") +
+  geom_segment(data = tmp2,
+               aes(x = -30,
+                   y = ypos,
+                   xend = -20,
+                   yend = `HG-LG`)) +
+  geom_text(data = tmp2,
+            aes(x = -30,
+                y = ypos,
+                label = gene),
+            size = 4,
+            hjust = 1) +
+  geom_hline(yintercept = c(-0.3, 0.3),
+             linetype = "dashed") +
+  geom_vline(xintercept = c(-10, 10),
+             linetype = "dashed") +
+  geom_point(data = tmp[reg != "Promoter",],
+             aes(alpha = a),
+             size = 2,
+             shape = 21) +
+  geom_point(data = tmp[reg == "Promoter",],
+             aes(alpha = a),
+             size = 2,
+             shape = 21) +
+  scale_x_continuous("DNA Methylation Difference(%)",
+                     breaks = seq(-20, 40, 10),
+                     limits = c(-40, 60)) +
+  scale_y_continuous("RNA Expression Difference (log2)") +
+  ggtitle("HG - LG") +
+  scale_fill_manual("Region",
+                    values = c("Promoter" = "green",
+                               "5' UTR" = "white",
+                               "Body" = "blue",
+                               "3' UTR" = "grey",
+                               "Downstream" = "red")) +
+  scale_alpha_continuous(guide = FALSE) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "top",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+tiff(filename = "tmp/fig8a_starburst_hg-lg.tiff",
+     height = 5,
+     width = 7,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p1)
+graphics.off()
+
+print(p1)
+```
+
+## FX vs. HG Starburst
+```{r starburst_fx_hg, fig.height = 5, fig.width = 7}
+tmp <- rna_dna[gene %in% unique(c(g3$gene,
+                                  g4$gene)), ]
+tmp$reg <- factor(tmp$reg,
+                  levels = rev(levels(tmp$reg)))
+
+tmp$a <- 0.7
+tmp$a[tmp$`FX-HG DNA` > -10 & 
+        tmp$`FX-HG DNA` < 10] <- 0.3
+
+range(tmp$`FX-HG DNA`)
+# -28.05701  17.23301
+
+range(tmp$`FX-HG`)
+# -0.8242947  3.0122065
+
+tmp1 <- unique(tmp[gene %in% unique(g3$gene) &
+                     reg == "Promoter",
+                   c("gene",
+                     "reg",
+                     "FX-HG")])
+setkey(tmp1,
+       `FX-HG`)
+tmp1$ypos <- seq(from = min(tmp$`FX-HG`), 
+                 to = max(tmp$`FX-HG`), 
+                 length.out = length(tmp1$gene))
+
+tmp2 <- unique(rna_dna[gene %in% unique(g4$gene) &
+                         reg == "Promoter",
+                       c("gene",
+                         "reg",
+                         "FX-HG")])
+setkey(tmp2,
+       `FX-HG`)
+tmp2$ypos <- seq(from = min(tmp$`FX-HG`), 
+                 to = max(tmp$`FX-HG`), 
+                 length.out = length(tmp2$gene))
+
+p1 <- ggplot(data = tmp,
+             aes(x = `FX-HG DNA`,
+                 y = `FX-HG`,
+                 fill = reg)) +
+  geom_segment(data = tmp1,
+               aes(x = -30,
+                   y = `FX-HG`,
+                   xend = 20,
+                   yend = `FX-HG`),
+               linetype = "dotted") +
+  geom_segment(data = tmp1,
+               aes(x = 20,
+                   y = `FX-HG`,
+                   xend = 30,
+                   yend = ypos)) +
+  geom_text(data = tmp1,
+            aes(x = 30,
+                y = ypos,
+                label = gene),
+            size = 4,
+            hjust = 0) +
+  geom_segment(data = tmp2,
+               aes(x = -30,
+                   y = `FX-HG`,
+                   xend = 20,
+                   yend = `FX-HG`),
+               linetype = "dotted") +
+  geom_segment(data = tmp2,
+               aes(x = -40,
+                   y = ypos,
+                   xend = -30,
+                   yend = `FX-HG`)) +
+  geom_text(data = tmp2,
+            aes(x = -40,
+                y = ypos,
+                label = gene),
+            size = 4,
+            hjust = 1) +
+  geom_hline(yintercept = c(-0.3, 0.3),
+             linetype = "dashed") +
+  geom_vline(xintercept = c(-10, 10),
+             linetype = "dashed") +
+  geom_point(data = tmp[reg != "Promoter",],
+             aes(alpha = a),
+             size = 2,
+             shape = 21) +
+  geom_point(data = tmp[reg == "Promoter",],
+             aes(alpha = a),
+             size = 2,
+             shape = 21) +
+  scale_x_continuous("DNA Methylation Difference(%)",
+                     breaks = seq(-30, 20, 10),
+                     limits = c(-50, 40)) +
+  scale_y_continuous("RNA Expression Difference (log2)") +
+  ggtitle("FX - HG") +
+  scale_fill_manual("Region",
+                    values = c("Promoter" = "green",
+                               "5' UTR" = "white",
+                               "Body" = "blue",
+                               "3' UTR" = "grey",
+                               "Downstream" = "red")) +
+  scale_alpha_continuous(guide = FALSE) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "top",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+tiff(filename = "tmp/fig8b_starburst_fx-hg.tiff",
+     height = 5,
+     width = 7,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p1)
+graphics.off()
+
+print(p1)
+```
+
+## Lollipop plo: SELECT GENES!
+```{r lollipop, fig.height = 8, fig.width = 12}
+# Genes with RNA down/DNA up----
+gene.keep <- c("Fgl2",
+               "Adcy7",
+               "Hhat",
+               "Acta1")
+# DNA----
+dna <- data.table(gene = dt1$gene,
+                  CpG = dt1$CpG,
+                  annotation = as.character(dt1$anno),
+                  distanceToTSS = dt1$distanceToTSS,
+                  pct)
+
+dna <- dna[gene %in% gene.keep, ]
+
+# Differences
+dna$`HG-LG` <- 100*(dna$WJ02 - dna$WJ01)
+dna$`FX-HG` <- 100*(dna$WJ05 - dna$WJ02)
+
+dna$reg <- "5 to 10"
+dna$reg[dna$CpG > 10] <- "11 to 20"
+dna$reg[dna$CpG > 20] <- ">20"
+dna$reg <- factor(dna$reg,
+                  levels = c("5 to 10",
+                             "11 to 20",
+                             ">20"))
+
+setkey(dna,
+        gene,
+        distanceToTSS)
+dna[, distRank := rank(distanceToTSS),
+    by = gene]
+
+# Long data
+dt3 <- melt.data.table(data = dna,
+                       id.vars = c("gene",
+                                   "reg",
+                                   "annotation",
+                                   "distanceToTSS",
+                                   "distRank"),
+                       measure.vars = c("HG-LG",
+                                        "FX-HG"),
+                       variable.name = "Treatment",
+                       value.name = "DNA")
+dt3$Treatment <- as.character(dt3$Treatment)
+
+dt3$annotation[substr(dt3$annotation, 1, 4) == "Exon"] <- "Exon"
+dt3$annotation[substr(dt3$annotation, 1, 6) == "Intron"] <- "Intron"
+dt3$annotation[substr(dt3$annotation, 1, 8) == "Promoter"] <- "Promoter"
+dt3$annotation[substr(dt3$annotation, 1, 4) == "Down"] <- "Downstream"
+dt3$annotation <- factor(dt3$annotation)
+
+# RNA
+# RNA data Long format----
+dt2 <- melt.data.table(data = expRNA,
+                       id.vars = "gene",
+                       measure.vars = c("HG-LG",
+                                        "FX-HG"),
+                       variable.name = "Treatment",
+                       value.name = "RNA")
+dt2$Treatment <- as.character(dt2$Treatment)
+
+# Merge DNA with RNA----
+dt3 <- merge(dt3,
+             dt2,
+             by = c("gene",
+                    "Treatment"))
+
+# Isolate genes----
+gX <- unique(dt3$gene)
+dna.gX <- dt3[dt3$gene %in% gX, ]
+dna.gX$y0 <- 0
+
+dna.gX$Treatment <- paste(dna.gX$Treatment,
+                          " (RNA = ",
+                          round(dna.gX$RNA, 3),
+                          ")",
+                          sep = "")
+
+p1 <- ggplot(dna.gX,
+             aes(x = distRank,
+                 y = DNA)) +
+  facet_wrap(.~  gene + Treatment,
+             scales = "free_x",
+             ncol = 4) +
+  geom_rect(aes(xmin = -Inf,
+                xmax = Inf,
+                ymin = -Inf,
+                ymax = -10),
+            fill = "pink") +
+  geom_rect(aes(xmin = -Inf,
+                xmax = Inf,
+                ymin = 10,
+                ymax = Inf),
+            fill = "lightgreen") +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = c(10,
+                            -10),
+             linetype = "dashed") +
+  geom_segment(aes(x = distRank,
+                   y = y0,
+                   xend = distRank,
+                   yend = DNA)) + 
+  geom_point(aes(x = distRank,
+                 y = DNA,
+                 fill = annotation,
+                 size = reg),
+             shape = 21) +
+  # scale_x_continuous("Distance from TSS",
+  #                    breaks = dna.gX$distRank,
+  #                    labels = dna.gX$distanceToTSS) +
+  scale_x_continuous("Distance from TSS") +
+  scale_y_continuous("% Methylation") +
+  ggtitle(paste("Gene:",
+                gX)) +
+  scale_fill_manual("Region",
+                    values = c("Distal Intergenic" = "purple",
+                               "Exon" = "blue",
+                               "Intron" = "white",
+                               "Promoter" = "brown",
+                               "3' UTR" = "black",
+                               "5' UTR" = "yellow",
+                               "Downstream" = "orange")) +
+  scale_size_manual("Number of CpG-s",
+                    values = c("5 to 10" = 5,
+                               "11 to 20" = 6,
+                               ">20" = 7)) +
+  guides(fill = guide_legend(override.aes = list(size = 7))) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "top",
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+tiff(filename = "tmp/lollipops.tiff",
+     height = 8,
+     width = 12,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+print(p1)
+graphics.off()
+
+print(p1)
+```
+
+# Appendix
+## Sources
+
+## References
+
+## Session Info
+```{r}
+sessionInfo()
+```
