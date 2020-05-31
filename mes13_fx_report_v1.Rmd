@@ -281,7 +281,6 @@ plot(
   pch = ".",
   xlab = "Mean",
   ylab = "Difference",
-  ylim = c(-3.2, 3.2),
   main = "MES13 FPM-Normalized Gene Expressions\nFX-HG, FDR < 0.5"
 )
 points(fx_hg$diff[fx_hg$`q-value(Storey et al. 2003)` < 0.5 &
