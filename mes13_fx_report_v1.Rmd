@@ -42,6 +42,7 @@ require(ChIPseeker)
 require(org.Mm.eg.db)
 require(TxDb.Mmusculus.UCSC.mm10.knownGene)
 require(DSS)
+require(ReactomePA)
 ```
 
 # RNA-seq
@@ -385,7 +386,7 @@ p1 <- ggplot() +
                 # color = factor(c(2, 1, 1, 2)),
                 label = c(paste0("HG - LG\n(", length(g2), ")"),
                           paste0("FX - HG\n(", length(g3), ")"),
-                          paste0("HG - HG\n(", length(g4), ")"),
+                          paste0("HG - LG\n(", length(g1), ")"),
                           paste0("FX - HG\n(", length(g4), ")"))),
             size = 7) +
   geom_text(aes(x = c(3.25, 3.25),
@@ -557,6 +558,140 @@ print(grid.arrange(p2,
                    heights = 10, 
                    widths = c(10, 8)))
 ```
+
+```{r reactome}
+# Map  gene names to Entrez Gene ID
+gene_names <- unique(c(g1, g2, g3, g4))
+length(gene_names)
+
+entraz_id <- list()
+for (i in 1:length(gene_names)) {
+  out <- try(unlist(mget(x = gene_names[i],
+                         envir = org.Mm.egALIAS2EG)),
+             silent = TRUE)
+  if (class(out)[1] != "try-error") {
+    # entraz_id[[i]] <- out
+    entraz_id[[i]] <- data.table(gene = gene_names[i],
+                                 version = names(out),
+                                 entraz_id = out)
+  } 
+  # else {
+  #   entraz_id[[i]] <- NA
+  # }
+}
+
+gene_map <- rbindlist(entraz_id)
+
+# Pathway Enrichment Analysis of a gene set. 
+# Given a vector of genes, this function will return 
+# the enriched pathways with FDR control.
+# a. log2(HG - LG) > 0.3
+m1 <- enrichPathway(gene = gene_map$entraz_id[gene_map$gene %in% g1],
+                    pvalueCutoff = 0.5, 
+                    readable = TRUE, 
+                    organism = "mouse")
+t1 <- as.data.table(m1)
+t1
+
+# b. log2(HG - LG) < -0.3
+m2 <- enrichPathway(gene = gene_map$entraz_id[gene_map$gene %in% g2],
+                    pvalueCutoff = 0.5, 
+                    readable = TRUE, 
+                    organism = "mouse")
+t2 <- as.data.table(m2)
+t2
+
+# c. log2(FX - HG) > 0.3
+m3 <- enrichPathway(gene = gene_map$entraz_id[gene_map$gene %in% g3],
+                    pvalueCutoff = 0.5, 
+                    readable = TRUE, 
+                    organism = "mouse")
+t3 <- as.data.table(m3)
+t3
+
+# d. log2(FX - HG)< -0.3
+m4 <- enrichPathway(gene = gene_map$entraz_id[gene_map$gene %in% g4],
+                    pvalueCutoff = 0.5, 
+                    readable = TRUE, 
+                    organism = "mouse")
+t4 <- as.data.table(m4)
+t4
+
+# e. Up-Down: log2(HG - LG) > 0.3 & log2(FX - HG) < -0.3
+m5 <- enrichPathway(gene = gene_map$entraz_id[gene_map$gene %in% up.dn],
+                    pvalueCutoff = 0.5, 
+                    readable = TRUE, 
+                    organism = "mouse")
+t5 <- as.data.table(m5)
+t5
+
+# f. Down-Up: log2(HG - LG) < -0.3 & log2(FX - HG) > 0.3
+m6 <- enrichPathway(gene = gene_map$entraz_id[gene_map$gene %in% dn.up],
+                    pvalueCutoff = 0.5, 
+                    readable = TRUE, 
+                    organism = "mouse")
+t6 <- as.data.table(m6)
+t6
+```
+
+```{r reactome_fig_tab, fig.height = 5, fig.width = 10}
+barplot(m1, 
+        showCategory = 20,
+        title = "log2(HG - LG) > 0.3")
+
+barplot(m2, 
+        showCategory = 20,
+        title = "log2(HG - LG) < -0.3")
+
+barplot(m3, 
+        showCategory = 20,
+        title = "log2(FX - HG) > 0.3")
+
+barplot(m4, 
+        showCategory = 20,
+        title = "log2(FX - HG) < -0.3")
+
+# Up-Down: 
+barplot(m5, 
+        showCategory = 20,
+        title = "log2(HG - LG) > 0.3 & log2(FX - HG)< -0.3")
+
+tiff(filename = "tmp/mes13_fx_reactome_up_down.tiff",
+     height = 5,
+     width = 10,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+barplot(m5, 
+        showCategory = 20,
+        title = "log2(HG - LG) > 0.3 & log2(FX - HG)< -0.3")
+graphics.off()
+
+# Down-Up: 
+barplot(m6, 
+        showCategory = 20,
+        title = "log2(HG - LG) > 0.3 & log2(FX - HG)< -0.3")
+tiff(filename = "tmp/mes13_fx_reactome_down_up.tiff",
+     height = 5,
+     width = 10,
+     units = 'in',
+     res = 600,
+     compression = "lzw+p")
+barplot(m5, 
+        showCategory = 20,
+        title = "log2(HG - LG) > 0.3 & log2(FX - HG)< -0.3")
+graphics.off()
+
+# Save CSV files
+write.csv(t1, file = "tmp/a.csv")
+write.csv(t2, file = "tmp/b.csv")
+write.csv(t3, file = "tmp/c.csv")
+write.csv(t4, file = "tmp/d.csv")
+write.csv(t5, file = "tmp/e.csv")
+write.csv(t6, file = "tmp/f.csv")
+```
+
+
 
 # Methyl-seq
 ## Load DNA Data and Annotate
@@ -1201,61 +1336,61 @@ range(tmp$`FX-HG DNA`)
 range(tmp$`FX-HG`)
 # -0.8242947  3.0122065
 
-tmp1 <- unique(tmp[gene %in% unique(g3$gene) &
+tmp3 <- unique(tmp[gene %in% unique(g3$gene) &
                      reg == "Promoter",
                    c("gene",
                      "reg",
                      "FX-HG")])
-setkey(tmp1,
+setkey(tmp3,
        `FX-HG`)
-tmp1$ypos <- seq(from = min(tmp$`FX-HG`), 
+tmp3$ypos <- seq(from = min(tmp$`FX-HG`), 
                  to = max(tmp$`FX-HG`), 
-                 length.out = length(tmp1$gene))
+                 length.out = length(tmp3$gene))
 
-tmp2 <- unique(rna_dna[gene %in% unique(g4$gene) &
+tmp4 <- unique(rna_dna[gene %in% unique(g4$gene) &
                          reg == "Promoter",
                        c("gene",
                          "reg",
                          "FX-HG")])
-setkey(tmp2,
+setkey(tmp4,
        `FX-HG`)
-tmp2$ypos <- seq(from = min(tmp$`FX-HG`), 
+tmp4$ypos <- seq(from = min(tmp$`FX-HG`), 
                  to = max(tmp$`FX-HG`), 
-                 length.out = length(tmp2$gene))
+                 length.out = length(tmp4$gene))
 
 p1 <- ggplot(data = tmp,
              aes(x = `FX-HG DNA`,
                  y = `FX-HG`,
                  fill = reg)) +
-  geom_segment(data = tmp1,
+  geom_segment(data = tmp3,
                aes(x = -30,
                    y = `FX-HG`,
                    xend = 20,
                    yend = `FX-HG`),
                linetype = "dotted") +
-  geom_segment(data = tmp1,
+  geom_segment(data = tmp3,
                aes(x = 20,
                    y = `FX-HG`,
                    xend = 30,
                    yend = ypos)) +
-  geom_text(data = tmp1,
+  geom_text(data = tmp3,
             aes(x = 30,
                 y = ypos,
                 label = gene),
             size = 4,
             hjust = 0) +
-  geom_segment(data = tmp2,
+  geom_segment(data = tmp4,
                aes(x = -30,
                    y = `FX-HG`,
                    xend = 20,
                    yend = `FX-HG`),
                linetype = "dotted") +
-  geom_segment(data = tmp2,
+  geom_segment(data = tmp4,
                aes(x = -40,
                    y = ypos,
                    xend = -30,
                    yend = `FX-HG`)) +
-  geom_text(data = tmp2,
+  geom_text(data = tmp4,
             aes(x = -40,
                 y = ypos,
                 label = gene),
@@ -1306,12 +1441,11 @@ print(p1)
 ```
 
 ## Lollipop plo: SELECT GENES!
-```{r lollipop, fig.height = 8, fig.width = 12}
+```{r lollipop, fig.height = 7, fig.width = 12}
 # Genes with RNA down/DNA up----
-gene.keep <- c("Fgl2",
-               "Adcy7",
-               "Hhat",
-               "Acta1")
+gene.keep <- unique(c(tmp2$gene[tmp2$gene %in% tmp3$gene],
+                      tmp1$gene[tmp1$gene %in% tmp4$gene]))
+
 # DNA----
 dna <- data.table(gene = dt1$gene,
                   CpG = dt1$CpG,
@@ -1390,7 +1524,8 @@ p1 <- ggplot(dna.gX,
                  y = DNA)) +
   facet_wrap(.~  gene + Treatment,
              scales = "free_x",
-             ncol = 4) +
+             nrow = 2,
+             dir = "v") +
   geom_rect(aes(xmin = -Inf,
                 xmax = Inf,
                 ymin = -Inf,
@@ -1440,7 +1575,7 @@ p1 <- ggplot(dna.gX,
         axis.ticks.x=element_blank())
 
 tiff(filename = "tmp/lollipops.tiff",
-     height = 8,
+     height = 7,
      width = 12,
      units = 'in',
      res = 600,
